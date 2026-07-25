@@ -1,33 +1,38 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm,
-  Select, Space, Table, Tag, Tree, message,
-} from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import React, { useEffect, useState } from 'react';
+import { Button, DatePicker, Dropdown, Form, Input, InputNumber, Menu, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Tree, message } from 'antd';
+import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, DownOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { DataNode } from 'antd/es/tree';
 import { ProjectService } from '../services/ProjectService';
 import { TaskService } from '../services/TaskService';
-import type { Project, ProjectGroup, Task, TaskPriority, TaskStatus } from '../types';
-import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../types';
+import type { Project, ProjectGroup, Task } from '../types';
+import { ConfigService } from '../services/ConfigService';
 
 export function ProjectPage() {
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [groupModalOpen, setGroupModalOpen] = useState(false);
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [taskDetailModalOpen, setTaskDetailModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [groupForm] = Form.useForm();
-  const [projectForm] = Form.useForm();
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [taskForm] = Form.useForm();
+  const [priorities, setPriorities] = useState<{ id: string; label: string; color: string }[]>([]);
+  const [taskStatuses, setTaskStatuses] = useState<{ id: string; label: string; color: string }[]>([]);
+  const [projectStatuses, setProjectStatuses] = useState<{ id: string; label: string; color: string }[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [sortInfo, setSortInfo] = useState<{ key: string; order: 'ascend' | 'descend' }>({ key: 'startTime', order: 'descend' });
+  const [collapsed, setCollapsed] = useState(false);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    loadConfig();
+  }, []);
 
   async function loadData() {
+    await ProjectService.resetCache();
+    await TaskService.resetCache();
     const [g, p, t] = await Promise.all([
       ProjectService.getGroups(),
       ProjectService.getProjects(),
@@ -38,44 +43,66 @@ export function ProjectPage() {
     setTasks(t);
   }
 
-  const treeData: DataNode[] = useMemo(() => {
-    return groups.map((group) => ({
-      key: `group-${group.id}`,
-      title: group.name,
-      children: projects
-        .filter((p) => p.groupId === group.id)
-        .map((p) => ({ key: `project-${p.id}`, title: p.name, isLeaf: true })),
-    }));
-  }, [groups, projects]);
+  async function loadConfig() {
+    const [p, s, ps] = await Promise.all([ConfigService.getPriorities(), ConfigService.getTaskStatuses(), ConfigService.getProjectStatuses()]);
+    setPriorities(p);
+    setTaskStatuses(s);
+    setProjectStatuses(ps);
+  }
+
+  const filteredProjects = statusFilter.length === 0 ? projects : projects.filter((p) => statusFilter.includes(p.status));
+
+  const treeData: DataNode[] = groups.map((group) => ({
+    key: `group-${group.id}`,
+    title: (
+      <span>
+        {group.color && <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', backgroundColor: group.color, marginRight: 8 }} />}
+        {group.name}
+      </span>
+    ),
+    children: filteredProjects
+      .filter((p) => p.groupId === group.id)
+      .map((p) => ({
+        key: `project-${p.id}`,
+        title: (
+          <span>
+            {p.color && <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', backgroundColor: p.color, marginRight: 8 }} />}
+            {p.name}
+            <Tag color={getStatusColor(p.status)} style={{ marginLeft: 8, fontSize: 10 }}>
+              {projectStatuses.find((s) => s.id === p.status)?.label || p.status}
+            </Tag>
+          </span>
+        ),
+        isLeaf: true,
+      })),
+  }));
+
+  function getStatusColor(status: string): string {
+    const found = projectStatuses.find((s) => s.id === status);
+    return found?.color || '#999';
+  }
 
   const filteredTasks = selectedProjectId
     ? tasks.filter((t) => t.projectId === selectedProjectId)
     : [];
+
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    const key = sortInfo.key;
+    const order = sortInfo.order === 'ascend' ? 1 : -1;
+    const va = a[key as keyof Task];
+    const vb = b[key as keyof Task];
+    if (va === vb) return 0;
+    if (va === null || va === undefined) return order;
+    if (vb === null || vb === undefined) return -order;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * order;
+    return String(va).localeCompare(String(vb)) * order;
+  });
 
   function onTreeSelect(keys: React.Key[]) {
     const key = keys[0]?.toString() ?? '';
     if (key.startsWith('project-')) {
       setSelectedProjectId(key.replace('project-', ''));
     }
-  }
-
-  async function handleAddGroup() {
-    const values = await groupForm.validateFields();
-    await ProjectService.addGroup(values.name, values.description ?? '');
-    setGroupModalOpen(false);
-    groupForm.resetFields();
-    await loadData();
-    message.success('分组已创建');
-  }
-
-  async function handleAddProject() {
-    if (!selectedGroupId) return;
-    const values = await projectForm.validateFields();
-    await ProjectService.addProject(selectedGroupId, values.name, values.description ?? '');
-    setProjectModalOpen(false);
-    projectForm.resetFields();
-    await loadData();
-    message.success('项目已创建');
   }
 
   async function handleSaveTask() {
@@ -108,31 +135,133 @@ export function ProjectPage() {
     setTaskModalOpen(true);
   }
 
+  function openViewTask(task: Task) {
+    setViewingTask(task);
+    setTaskDetailModalOpen(true);
+  }
+
   const taskColumns = [
-    { title: '标题', dataIndex: 'title', key: 'title' },
+    {
+      title: '标题',
+      dataIndex: 'title',
+      key: 'title',
+      render: (title: string, record: Task) => (
+        <Space>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openViewTask(record)} />
+          <Tooltip title={record.description || '无描述'}>
+            <span>{title}</span>
+          </Tooltip>
+        </Space>
+      ),
+    },
+    {
+      title: '开始时间',
+      dataIndex: 'startTime',
+      key: 'startTime',
+      width: 120,
+      sorter: true,
+      defaultSortOrder: 'descend' as const,
+      render: (t: string) => t ? dayjs(t).format('YYYY-MM-DD') : '-',
+    },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 80,
-      render: (p: TaskPriority) => TASK_PRIORITY_LABELS[p],
+      width: 110,
+      sorter: true,
+      render: (p: string, record: Task) => {
+        const currentPriority = priorities.find((pr) => pr.id === p);
+        const menu = (
+          <Menu
+            items={priorities.map((pr) => ({
+              key: pr.id,
+              label: (
+                <span>
+                  <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: pr.color, marginRight: 8 }} />
+                  {pr.label}
+                </span>
+              ),
+            }))}
+            onClick={async ({ key }) => {
+              await TaskService.updateTask(record.id, { priority: key });
+              await loadData();
+            }}
+          />
+        );
+        return (
+          <Dropdown overlay={menu} placement="bottomLeft">
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', cursor: 'pointer', color: '#666' }}>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: currentPriority?.color || '#999', marginRight: 6 }} />
+                {currentPriority?.label || p}
+              </span>
+              <DownOutlined style={{ fontSize: 12, color: '#999' }} />
+            </span>
+          </Dropdown>
+        );
+      },
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
-      render: (s: TaskStatus) => (
-        <Tag color={s === 'done' ? 'green' : s === 'in_progress' ? 'blue' : 'default'}>
-          {TASK_STATUS_LABELS[s]}
-        </Tag>
+      width: 110,
+      sorter: true,
+      render: (s: string, record: Task) => {
+        const currentStatus = taskStatuses.find((st) => st.id === s);
+        const menu = (
+          <Menu
+            items={taskStatuses.map((st) => ({
+              key: st.id,
+              label: (
+                <span>
+                  <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: st.color, marginRight: 8 }} />
+                  {st.label}
+                </span>
+              ),
+            }))}
+            onClick={async ({ key }) => {
+              await TaskService.updateTask(record.id, { status: key });
+              await loadData();
+            }}
+          />
+        );
+        return (
+          <Dropdown overlay={menu} placement="bottomLeft">
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', cursor: 'pointer', color: '#666' }}>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: currentStatus?.color || '#999', marginRight: 6 }} />
+                {currentStatus?.label || s}
+              </span>
+              <DownOutlined style={{ fontSize: 12, color: '#999' }} />
+            </span>
+          </Dropdown>
+        );
+      },
+    },
+    {
+      title: '工时',
+      dataIndex: 'workHours',
+      key: 'workHours',
+      width: 80,
+      sorter: true,
+      render: (h: number, record: Task) => (
+        <InputNumber
+          value={h}
+          onChange={async (value) => {
+            await TaskService.updateTask(record.id, { workHours: value || 0 });
+            await loadData();
+          }}
+          min={0}
+          step={0.5}
+          style={{ width: '100%' }}
+        />
       ),
     },
-    { title: '工时', dataIndex: 'workHours', key: 'workHours', width: 70, render: (h: number) => `${h}h` },
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 80,
       render: (_: unknown, record: Task) => (
         <Space>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditTask(record)} />
@@ -149,17 +278,60 @@ export function ProjectPage() {
 
   return (
     <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 96px)' }}>
-      <div style={{ width: 260, borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
-        <Space style={{ marginBottom: 12 }}>
-          <Button size="small" icon={<PlusOutlined />} onClick={() => setGroupModalOpen(true)}>分组</Button>
-          <Button size="small" icon={<PlusOutlined />} disabled={groups.length === 0} onClick={() => {
-            if (groups.length > 0) {
-              setSelectedGroupId(groups[0].id);
-              setProjectModalOpen(true);
-            }
-          }}>项目</Button>
-        </Space>
-        <Tree treeData={treeData} onSelect={onTreeSelect} defaultExpandAll />
+      <div
+        style={{
+          width: collapsed ? 48 : 300,
+          borderRight: collapsed ? 'none' : '1px solid #f0f0f0',
+          overflow: 'hidden',
+          transition: 'width 0.3s ease, border 0.3s ease',
+          position: 'relative',
+          flexShrink: 0,
+          paddingLeft: collapsed ? 4 : 16,
+          paddingTop: 8,
+          paddingBottom: 8,
+        }}
+      >
+        {!collapsed && (
+          <>
+            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Select
+                mode="multiple"
+                value={statusFilter}
+                onChange={setStatusFilter}
+                style={{ flex: 1 }}
+                placeholder="选择项目状态"
+                options={projectStatuses.map((s) => ({ value: s.id, label: s.label }))}
+              />
+              <Button
+                type="text"
+                icon={<MenuFoldOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
+                style={{
+                  background: '#fff',
+                  border: '1px solid #e8e8e8',
+                  borderRadius: '4px',
+                  padding: 6,
+                }}
+              />
+            </div>
+            <Tree treeData={treeData} onSelect={onTreeSelect} defaultExpandAll />
+          </>
+        )}
+        {collapsed && (
+          <Button
+            type="text"
+            icon={<MenuUnfoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            style={{
+              width: '100%',
+              justifyContent: 'center',
+              background: '#fff',
+              border: '1px solid #e8e8e8',
+              borderRadius: '4px',
+              padding: 8,
+            }}
+          />
+        )}
       </div>
       <div style={{ flex: 1 }}>
         {selectedProjectId ? (
@@ -172,40 +344,35 @@ export function ProjectPage() {
                 setTaskModalOpen(true);
               }}>新建任务</Button>
             </Space>
-            <Table dataSource={filteredTasks} columns={taskColumns} rowKey="id" size="small" pagination={false} />
+            <Table
+              dataSource={sortedTasks}
+              columns={taskColumns}
+              rowKey="id"
+              size="small"
+              pagination={false}
+              onChange={(_, __, sorter) => {
+                const s = Array.isArray(sorter) ? sorter[0] : sorter;
+                if (s?.field && s?.order) {
+                  setSortInfo({ key: String(s.field), order: s.order });
+                }
+              }}
+            />
           </>
         ) : (
           <div style={{ color: '#999', paddingTop: 40, textAlign: 'center' }}>请从左侧选择一个项目</div>
         )}
       </div>
 
-      <Modal title="新建分组" open={groupModalOpen} onOk={handleAddGroup} onCancel={() => setGroupModalOpen(false)}>
-        <Form form={groupForm} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal title="新建项目" open={projectModalOpen} onOk={handleAddProject} onCancel={() => setProjectModalOpen(false)}>
-        <Form form={projectForm} layout="vertical">
-          <Form.Item label="所属分组">
-            <Select value={selectedGroupId} onChange={setSelectedGroupId} options={groups.map((g) => ({ value: g.id, label: g.name }))} />
-          </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
-        </Form>
-      </Modal>
-
       <Modal title={editingTask ? '编辑任务' : '新建任务'} open={taskModalOpen} onOk={handleSaveTask} onCancel={() => setTaskModalOpen(false)} width={560}>
-        <Form form={taskForm} layout="vertical" initialValues={{ priority: 'medium', status: 'todo', workHours: 0 }}>
+        <Form form={taskForm} layout="vertical" initialValues={{ priority: priorities[1]?.id || 'medium', status: taskStatuses[0]?.id || 'todo', workHours: 0 }}>
           <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
           <Space>
             <Form.Item name="priority" label="优先级">
-              <Select style={{ width: 100 }} options={Object.entries(TASK_PRIORITY_LABELS).map(([k, v]) => ({ value: k, label: v }))} />
+              <Select style={{ width: 100 }} options={priorities.map((p) => ({ value: p.id, label: p.label }))} />
             </Form.Item>
             <Form.Item name="status" label="状态">
-              <Select style={{ width: 110 }} options={Object.entries(TASK_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))} />
+              <Select style={{ width: 110 }} options={taskStatuses.map((s) => ({ value: s.id, label: s.label }))} />
             </Form.Item>
             <Form.Item name="workHours" label="工时"><InputNumber min={0} step={0.5} /></Form.Item>
           </Space>
@@ -215,6 +382,21 @@ export function ProjectPage() {
           </Space>
           <Form.Item name="remark" label="备注"><Input.TextArea /></Form.Item>
         </Form>
+      </Modal>
+
+      <Modal title="任务详情" open={taskDetailModalOpen} onCancel={() => setTaskDetailModalOpen(false)} footer={null}>
+        {viewingTask && (
+          <div style={{ padding: 8 }}>
+            <p><strong>标题：</strong>{viewingTask.title}</p>
+            <p><strong>描述：</strong>{viewingTask.description || '无'}</p>
+            <p><strong>优先级：</strong>{priorities.find((p) => p.id === viewingTask.priority)?.label || viewingTask.priority}</p>
+            <p><strong>状态：</strong>{taskStatuses.find((s) => s.id === viewingTask.status)?.label || viewingTask.status}</p>
+            <p><strong>工时：</strong>{viewingTask.workHours}h</p>
+            <p><strong>开始时间：</strong>{viewingTask.startTime ? dayjs(viewingTask.startTime).format('YYYY-MM-DD HH:mm') : '无'}</p>
+            <p><strong>完成时间：</strong>{viewingTask.finishTime ? dayjs(viewingTask.finishTime).format('YYYY-MM-DD HH:mm') : '无'}</p>
+            <p><strong>备注：</strong>{viewingTask.remark || '无'}</p>
+          </div>
+        )}
       </Modal>
     </div>
   );

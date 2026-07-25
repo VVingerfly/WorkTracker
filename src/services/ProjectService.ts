@@ -1,5 +1,6 @@
-import type { Project, ProjectGroup, ProjectsData } from '../types';
+import type { Project, ProjectGroup, ProjectStatus, ProjectsData } from '../types';
 import { FileService } from './FileService';
+import { TaskService } from './TaskService';
 
 const DEFAULT_DATA: ProjectsData = { groups: [], projects: [] };
 
@@ -7,12 +8,30 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+function migrateProject(raw: Partial<Project> & { id: string; groupId: string; name: string }): Project {
+  return {
+    id: raw.id,
+    groupId: raw.groupId,
+    name: raw.name,
+    description: raw.description ?? '',
+    status: (raw.status as ProjectStatus) ?? 'active',
+    color: raw.color,
+    studioName: raw.studioName ?? '',
+    contactPerson: raw.contactPerson ?? '',
+    customFields: raw.customFields ?? [],
+  };
+}
+
 export class ProjectService {
   private static data: ProjectsData | null = null;
 
   static async load(): Promise<ProjectsData> {
     if (!ProjectService.data) {
-      ProjectService.data = await FileService.readJson('projects.json', DEFAULT_DATA);
+      const raw = await FileService.readJson<ProjectsData>('projects.json', DEFAULT_DATA);
+      ProjectService.data = {
+        groups: raw.groups ?? [],
+        projects: (raw.projects ?? []).map(migrateProject),
+      };
     }
     return ProjectService.data;
   }
@@ -33,9 +52,9 @@ export class ProjectService {
     return [...data.projects];
   }
 
-  static async addGroup(name: string, description = ''): Promise<ProjectGroup> {
+  static async addGroup(name: string, description = '', color?: string): Promise<ProjectGroup> {
     const data = await ProjectService.load();
-    const group: ProjectGroup = { id: generateId(), name, description };
+    const group: ProjectGroup = { id: generateId(), name, description, color };
     data.groups.push(group);
     await ProjectService.save();
     return group;
@@ -52,14 +71,28 @@ export class ProjectService {
 
   static async deleteGroup(id: string): Promise<void> {
     const data = await ProjectService.load();
+    const projectIds = data.projects.filter((p) => p.groupId === id).map((p) => p.id);
+    for (const pid of projectIds) {
+      await TaskService.deleteByProject(pid);
+    }
     data.groups = data.groups.filter((g) => g.id !== id);
     data.projects = data.projects.filter((p) => p.groupId !== id);
     await ProjectService.save();
   }
 
-  static async addProject(groupId: string, name: string, description = ''): Promise<Project> {
+  static async addProject(groupId: string, fields: Partial<Project> & { name: string }): Promise<Project> {
     const data = await ProjectService.load();
-    const project: Project = { id: generateId(), groupId, name, description };
+    const project: Project = migrateProject({
+      id: generateId(),
+      groupId,
+      name: fields.name,
+      description: fields.description,
+      status: fields.status,
+      color: fields.color,
+      studioName: fields.studioName,
+      contactPerson: fields.contactPerson,
+      customFields: fields.customFields,
+    });
     data.projects.push(project);
     await ProjectService.save();
     return project;
@@ -75,6 +108,7 @@ export class ProjectService {
   }
 
   static async deleteProject(id: string): Promise<void> {
+    await TaskService.deleteByProject(id);
     const data = await ProjectService.load();
     data.projects = data.projects.filter((p) => p.id !== id);
     await ProjectService.save();

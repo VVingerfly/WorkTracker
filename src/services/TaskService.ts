@@ -1,4 +1,6 @@
+import dayjs from 'dayjs';
 import type { Leave, Task, TasksData } from '../types';
+import { ConfigService } from './ConfigService';
 import { FileService } from './FileService';
 
 const DEFAULT_TASKS: TasksData = { tasks: [] };
@@ -37,23 +39,30 @@ export class TaskService {
   static async getTodayTasks(): Promise<Task[]> {
     const tasks = await TaskService.getTasks();
     const today = new Date().toISOString().slice(0, 10);
+    const inProgressIds = (await ConfigService.getTaskStatuses())
+      .filter((s) => s.id === 'in_progress' || s.label.includes('进行'))
+      .map((s) => s.id);
     return tasks.filter((t) => {
       const start = t.startTime?.slice(0, 10);
       const finish = t.finishTime?.slice(0, 10);
-      return start === today || finish === today || t.status === 'in_progress';
+      return start === today || finish === today || inProgressIds.includes(t.status);
     });
   }
 
   static async addTask(projectId: string, title: string): Promise<Task> {
     const data = await TaskService.load();
+    const [priority, status] = await Promise.all([
+      ConfigService.getDefaultPriorityId(),
+      ConfigService.getDefaultStatusId(),
+    ]);
     const task: Task = {
       id: generateId(),
       projectId,
       title,
       description: '',
-      priority: 'medium',
-      status: 'todo',
-      startTime: null,
+      priority,
+      status,
+      startTime: dayjs().format('YYYY-MM-DD'),
       finishTime: null,
       workHours: 0,
       remark: '',

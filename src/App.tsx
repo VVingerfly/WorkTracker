@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AppLayout } from './components/AppLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProjectPage } from './pages/ProjectPage';
+import { AdminPage } from './pages/AdminPage';
 import { StatisticsPage } from './pages/StatisticsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import type { PageKey } from './types';
@@ -16,6 +17,7 @@ function App() {
   const pages: Record<PageKey, JSX.Element> = {
     dashboard: <DashboardPage />,
     project: <ProjectPage />,
+    admin: <AdminPage />,
     statistics: <StatisticsPage />,
     settings: <SettingsPage />,
   };

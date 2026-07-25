@@ -1,13 +1,17 @@
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { StatisticsService } from './StatisticsService';
-import { TASK_STATUS_LABELS } from '../types';
+import { ConfigService } from './ConfigService';
 
 export class ExportService {
   static async exportToExcel(month?: dayjs.Dayjs): Promise<void> {
-    const rows = await StatisticsService.getStatRows(month);
-    const summary = await StatisticsService.getMonthSummary(month);
+    const [rows, summary, statuses] = await Promise.all([
+      StatisticsService.getStatRows(month),
+      StatisticsService.getMonthSummary(month),
+      ConfigService.getTaskStatuses(),
+    ]);
     const ref = month ?? dayjs();
+    const statusMap = new Map(statuses.map((s) => [s.id, s.label]));
 
     const sheetData = [
       ['日期', '项目', '任务', '工时', '状态', '备注'],
@@ -16,7 +20,7 @@ export class ExportService {
         r.projectName,
         r.taskTitle,
         r.workHours,
-        TASK_STATUS_LABELS[r.status as keyof typeof TASK_STATUS_LABELS] ?? r.status,
+        statusMap.get(r.status) ?? r.status,
         r.remark,
       ]),
       [],
