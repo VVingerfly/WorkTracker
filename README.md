@@ -114,6 +114,25 @@ src-tauri/target/release/bundle/
     └── WorkTracker_0.1.0_x64-setup.nsis  # NSIS 脚本
 ```
 
+### 图标更新
+
+应用图标位于 `src-tauri/icons/` 目录下。如需更换图标：
+
+1. 准备一张 512×512 的 PNG 图片作为源图标，放在 `src-tauri/` 目录下（如 `app-icon.png`）
+2. 运行命令生成所有尺寸的图标：
+
+```bash
+npx tauri icon src-tauri/app-icon.png
+```
+
+该命令会自动生成以下图标文件：
+- `icon.ico` - Windows 图标
+- `icon.icns` - macOS 图标
+- `icon.png` - PNG 图标（多个尺寸）
+- `StoreLogo.png`, `Square*Logo.png` - Windows Store 图标
+
+3. 重新打包应用即可生效。
+
 ### Tauri 配置说明
 
 - **应用名称**: WorkTracker
