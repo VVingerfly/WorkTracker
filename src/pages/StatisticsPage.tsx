@@ -6,33 +6,30 @@ import { StatisticsService, type StatRow } from '../services/StatisticsService';
 import { ExportService } from '../services/ExportService';
 import { ProjectService } from '../services/ProjectService';
 import { TaskService } from '../services/TaskService';
-import { ConfigService } from '../services/ConfigService';
+import { useConfig } from '../contexts/ConfigContext';
 
 export function StatisticsPage() {
   const [rows, setRows] = useState<StatRow[]>([]);
   const [summary, setSummary] = useState({ totalHours: 0, taskCount: 0, doneCount: 0, leaveHours: 0 });
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [viewType, setViewType] = useState<'month' | 'week'>('month');
-  const [taskStatuses, setTaskStatuses] = useState<{ id: string; label: string; color: string }[]>([]);
-  const [priorities, setPriorities] = useState<{ id: string; label: string; color: string }[]>([]);
   const [rangeText, setRangeText] = useState('');
+  const { priorities, taskStatuses } = useConfig();
 
-  useEffect(() => { loadData(selectedDate, viewType); }, [selectedDate, viewType]);
+  useEffect(() => {
+    loadData(selectedDate, viewType);
+  }, [selectedDate, viewType]);
 
   async function loadData(date: dayjs.Dayjs, type: 'month' | 'week') {
     await ProjectService.resetCache();
     await TaskService.resetCache();
-    const [range, statRows, periodSummary, statuses, priorityOptions] = await Promise.all([
+    const [range, statRows, periodSummary] = await Promise.all([
       type === 'month' ? StatisticsService.getMonthRange(date) : StatisticsService.getWeekRange(date),
       StatisticsService.getStatRows(date, type),
       StatisticsService.getMonthSummary(date, type),
-      ConfigService.getTaskStatuses(),
-      ConfigService.getPriorities(),
     ]);
     setRows(statRows);
     setSummary(periodSummary);
-    setTaskStatuses(statuses);
-    setPriorities(priorityOptions);
     setRangeText(`${range[0].format('YYYY-MM-DD')} ~ ${range[1].format('YYYY-MM-DD')}`);
   }
 

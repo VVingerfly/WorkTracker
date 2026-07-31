@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, message } from 'antd';
-import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
 import { ConfigService } from '../services/ConfigService';
 import { FileService } from '../services/FileService';
 import { ExportService } from '../services/ExportService';
 import { ProjectService } from '../services/ProjectService';
 import { TaskService } from '../services/TaskService';
 import type { Config, PriorityOption, StatusOption } from '../types';
+import { useConfig } from '../contexts/ConfigContext';
 
 const COLOR_OPTIONS = ['#1677ff', '#52c41a', '#f5222d', '#fa8c16', '#722ed1', '#13c2c2', '#faad14', '#eb2f96'];
 
@@ -15,27 +16,45 @@ export function SettingsPage() {
   const [priorities, setPriorities] = useState<PriorityOption[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<StatusOption[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusOption[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<StatusOption[]>([]);
   const [priorityModalOpen, setPriorityModalOpen] = useState(false);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [projectStatusModalOpen, setProjectStatusModalOpen] = useState(false);
+  const [leaveTypeModalOpen, setLeaveTypeModalOpen] = useState(false);
   const [editingPriority, setEditingPriority] = useState<PriorityOption | null>(null);
   const [editingStatus, setEditingStatus] = useState<StatusOption | null>(null);
   const [editingProjectStatus, setEditingProjectStatus] = useState<StatusOption | null>(null);
+  const [editingLeaveType, setEditingLeaveType] = useState<StatusOption | null>(null);
   const [priorityForm] = Form.useForm<PriorityOption>();
   const [statusForm] = Form.useForm<StatusOption>();
   const [projectStatusForm] = Form.useForm<StatusOption>();
+  const [leaveTypeForm] = Form.useForm<StatusOption>();
   const [priorityColor, setPriorityColor] = useState<string>('');
   const [statusColor, setStatusColor] = useState<string>('');
   const [projectStatusColor, setProjectStatusColor] = useState<string>('');
+  const [leaveTypeColor, setLeaveTypeColor] = useState<string>('');
+  const [dataDir, setDataDir] = useState<string>('');
+  const [changingDir, setChangingDir] = useState(false);
+  const { config, saveConfig } = useConfig();
 
-  useEffect(() => { loadConfig(); }, []);
+  useEffect(() => { loadConfig(); loadDataDir(); }, [config]);
+
+  async function loadDataDir() {
+    try {
+      const dir = await FileService.getDataDir();
+      setDataDir(dir);
+    } catch {
+      setDataDir('(无法获取)');
+    }
+  }
 
   async function loadConfig() {
-    const config = await ConfigService.getConfig();
+    if (!config) return;
     form.setFieldsValue(config);
     setPriorities(config.priorities);
     setTaskStatuses(config.taskStatuses);
     setProjectStatuses(config.projectStatuses);
+    setLeaveTypes(config.leaveTypes);
   }
 
   async function handleSave() {
@@ -43,7 +62,8 @@ export function SettingsPage() {
     values.priorities = priorities;
     values.taskStatuses = taskStatuses;
     values.projectStatuses = projectStatuses;
-    await ConfigService.saveConfig(values);
+    values.leaveTypes = leaveTypes;
+    await saveConfig(values);
     message.success('配置已保存');
   }
 
@@ -61,6 +81,33 @@ export function SettingsPage() {
     await TaskService.resetCache();
     await loadConfig();
     message.success('备份已恢复，请刷新页面查看最新数据');
+  }
+
+  async function handleOpenDir() {
+    try {
+      await FileService.openDataDir();
+    } catch {
+      message.error('无法打开目录');
+    }
+  }
+
+  async function handleChangeDir() {
+    setChangingDir(true);
+    try {
+      const newDir = await FileService.changeDataDir();
+      if (newDir) {
+        setDataDir(newDir);
+        await ConfigService.resetCache();
+        await ProjectService.resetCache();
+        await TaskService.resetCache();
+        await loadConfig();
+        message.success('数据目录已更改，数据已迁移');
+      }
+    } catch {
+      message.error('更改数据目录失败');
+    } finally {
+      setChangingDir(false);
+    }
   }
 
   async function handleSavePriority() {
@@ -166,6 +213,41 @@ export function SettingsPage() {
       setProjectStatusColor('#1677ff');
     }
     setProjectStatusModalOpen(true);
+  }
+
+  function openEditLeaveType(type?: StatusOption) {
+    if (type) {
+      setEditingLeaveType(type);
+      leaveTypeForm.setFieldsValue(type);
+      setLeaveTypeColor(type.color || '');
+    } else {
+      setEditingLeaveType(null);
+      leaveTypeForm.resetFields();
+      setLeaveTypeColor('#1677ff');
+    }
+    setLeaveTypeModalOpen(true);
+  }
+
+  async function handleSaveLeaveType() {
+    const values = await leaveTypeForm.validateFields();
+    if (editingLeaveType) {
+      setLeaveTypes(leaveTypes.map((t) => t.id === editingLeaveType.id ? values : t));
+    } else {
+      setLeaveTypes([...leaveTypes, values]);
+    }
+    setLeaveTypeModalOpen(false);
+    leaveTypeForm.resetFields();
+    setEditingLeaveType(null);
+    message.success('请假类型已保存');
+  }
+
+  async function handleDeleteLeaveType(id: string) {
+    if (leaveTypes.length <= 1) {
+      message.warning('至少保留一个请假类型');
+      return;
+    }
+    setLeaveTypes(leaveTypes.filter((t) => t.id !== id));
+    message.success('请假类型已删除');
   }
 
   const ColorPicker = ({ color, setColor, form }: { color: string; setColor: (c: string) => void; form: any }) => (
@@ -283,8 +365,10 @@ export function SettingsPage() {
 
   return (
     <div>
-      <h2>设置</h2>
-      <Button type="primary" size="small" onClick={handleSave} style={{ marginBottom: 16 }}>保存配置</Button>
+      <h2 style={{ marginBottom: 12 }}>设置</h2>
+      <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16, maxWidth: 720 }}>
+        <Button type="primary" size="small" onClick={handleSave}>保存配置</Button>
+      </div>
       
       <Collapse defaultActiveKey={[]} style={{ maxWidth: 720 }}>
         <Collapse.Panel header="统计周期" key="period">
@@ -341,22 +425,64 @@ export function SettingsPage() {
           </Card>
         </Collapse.Panel>
 
+        <Collapse.Panel header="请假类型管理" key="leaveType">
+          <Card>
+            <Space style={{ marginBottom: 12 }}>
+              <Button size="small" icon={<PlusOutlined />} onClick={() => openEditLeaveType()}>添加请假类型</Button>
+            </Space>
+            <StatusTable data={leaveTypes} onEdit={openEditLeaveType} onDelete={handleDeleteLeaveType} />
+          </Card>
+        </Collapse.Panel>
+
         <Collapse.Panel header="数据管理" key="data">
           <Card>
-            <Space direction="vertical">
-              <Button icon={<DownloadOutlined />} onClick={handleBackup}>导出备份</Button>
-              <Button icon={<UploadOutlined />} onClick={() => document.getElementById('backup-file')?.click()}>导入备份</Button>
-              <input
-                id="backup-file"
-                type="file"
-                accept=".json"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleRestore(file);
-                  e.target.value = '';
-                }}
-              />
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div>
+                <div style={{ marginBottom: 8, color: '#666', fontSize: 13 }}>
+                  <FolderOutlined style={{ marginRight: 6 }} />
+                  数据保存目录
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Input
+                    value={dataDir}
+                    readOnly
+                    style={{ flex: 1 }}
+                    placeholder="数据保存目录"
+                  />
+                  <Button
+                    icon={<FolderOpenOutlined />}
+                    onClick={handleOpenDir}
+                    disabled={!dataDir || dataDir === '(浏览器模式)'}
+                  >
+                    打开目录
+                  </Button>
+                  <Button
+                    icon={<FolderOutlined />}
+                    onClick={handleChangeDir}
+                    loading={changingDir}
+                    disabled={dataDir === '(浏览器模式)'}
+                  >
+                    更改目录
+                  </Button>
+                </div>
+              </div>
+              <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
+                <Space direction="vertical">
+                  <Button icon={<DownloadOutlined />} onClick={handleBackup}>导出备份</Button>
+                  <Button icon={<UploadOutlined />} onClick={() => document.getElementById('backup-file')?.click()}>导入备份</Button>
+                  <input
+                    id="backup-file"
+                    type="file"
+                    accept=".json"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleRestore(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </Space>
+              </div>
             </Space>
           </Card>
         </Collapse.Panel>
@@ -397,6 +523,19 @@ export function SettingsPage() {
           <Form.Item name="label" label="显示标签" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="color" label="颜色">
             <ColorPicker color={projectStatusColor} setColor={setProjectStatusColor} form={projectStatusForm} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={editingLeaveType ? '编辑请假类型' : '新建请假类型'} open={leaveTypeModalOpen} onOk={handleSaveLeaveType} onCancel={() => {
+        setLeaveTypeModalOpen(false);
+        setEditingLeaveType(null);
+      }}>
+        <Form form={leaveTypeForm} layout="vertical">
+          <Form.Item name="id" label="ID" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="label" label="显示标签" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="color" label="颜色">
+            <ColorPicker color={leaveTypeColor} setColor={setLeaveTypeColor} form={leaveTypeForm} />
           </Form.Item>
         </Form>
       </Modal>

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, message } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Card, Dropdown, Form, Input, Menu, Modal, Popconfirm, Select, Space, Table, Tabs, message } from 'antd';
+import { DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { ProjectService } from '../services/ProjectService';
 import type { Project, ProjectGroup } from '../types';
-import { ConfigService } from '../services/ConfigService';
 import type { SorterResult } from 'antd/es/table/interface';
+import { useConfig } from '../contexts/ConfigContext';
 
 const COLOR_OPTIONS = ['#1677ff', '#52c41a', '#f5222d', '#fa8c16', '#722ed1', '#13c2c2', '#faad14', '#eb2f96'];
 
@@ -19,11 +19,10 @@ export function AdminPage() {
   const [groupForm] = Form.useForm();
   const [projectForm] = Form.useForm();
   const [groupColor, setGroupColor] = useState<string>('');
-  const [projectColor, setProjectColor] = useState<string>('');
-  const [projectStatuses, setProjectStatuses] = useState<{ id: string; label: string; color: string }[]>([]);
   const [filterGroupId, setFilterGroupId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [sortInfo, setSortInfo] = useState<SorterResult<Project>>({});
+  const { priorities, projectStatuses } = useConfig();
 
   useEffect(() => {
     loadData();
@@ -31,14 +30,12 @@ export function AdminPage() {
 
   async function loadData() {
     await ProjectService.resetCache();
-    const [g, p, ps] = await Promise.all([
+    const [g, p] = await Promise.all([
       ProjectService.getGroups(),
       ProjectService.getProjects(),
-      ConfigService.getProjectStatuses(),
     ]);
     setGroups(g);
     setProjects(p);
-    setProjectStatuses(ps);
   }
 
   const filteredProjects = projects.filter((p) => {
@@ -48,9 +45,29 @@ export function AdminPage() {
   });
 
   const sortedProjects = [...filteredProjects].sort((a, b) => {
-    if (!sortInfo.field) return 0;
-    const field = String(sortInfo.field);
-    const direction = sortInfo.order === 'ascend' ? 1 : -1;
+    const s = Array.isArray(sortInfo) ? sortInfo[0] : sortInfo;
+    if (!s || !s.field) return 0;
+    const field = String(s.field);
+    const direction = s.order === 'ascend' ? 1 : -1;
+
+    if (field === 'groupId') {
+      const groupA = groups.find((g) => g.id === a.groupId)?.name || '';
+      const groupB = groups.find((g) => g.id === b.groupId)?.name || '';
+      return groupA.localeCompare(groupB) * direction;
+    }
+
+    if (field === 'status') {
+      const statusA = projectStatuses.find((s) => s.id === a.status)?.label || a.status;
+      const statusB = projectStatuses.find((s) => s.id === b.status)?.label || b.status;
+      return statusA.localeCompare(statusB) * direction;
+    }
+
+    if (field === 'priority') {
+      const priorityA = priorities.find((p) => p.id === a.priority)?.label || a.priority;
+      const priorityB = priorities.find((p) => p.id === b.priority)?.label || b.priority;
+      return priorityA.localeCompare(priorityB) * direction;
+    }
+
     const valA = a[field as keyof Project];
     const valB = b[field as keyof Project];
     if (valA === null || valA === undefined) return direction;
@@ -107,7 +124,6 @@ export function AdminPage() {
     setEditingProject(project);
     setSelectedGroupId(project.groupId);
     projectForm.setFieldsValue(project);
-    setProjectColor(project.color || '');
     setProjectModalOpen(true);
   }
 
@@ -151,17 +167,8 @@ export function AdminPage() {
 
   const projectColumns = [
     {
-      title: '颜色',
-      key: 'color',
-      width: 80,
-      render: (_: unknown, record: Project) => (
-        record.color ? (
-          <span style={{ display: 'inline-block', width: 24, height: 24, borderRadius: '50%', backgroundColor: record.color }} />
-        ) : '-'
-      ),
-    },
-    {
       title: '所属分组',
+      dataIndex: 'groupId',
       key: 'group',
       width: 120,
       sorter: true,
@@ -189,11 +196,76 @@ export function AdminPage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 80,
+      width: 110,
       sorter: true,
-      render: (s: string) => {
-        const status = projectStatuses.find((st) => st.id === s);
-        return <Tag color={status?.color || '#999'}>{status?.label || s}</Tag>;
+      render: (s: string, record: Project) => {
+        const currentStatus = projectStatuses.find((st) => st.id === s);
+        const menu = (
+          <Menu
+            items={projectStatuses.map((st) => ({
+              key: st.id,
+              label: (
+                <span>
+                  <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: st.color, marginRight: 8 }} />
+                  {st.label}
+                </span>
+              ),
+            }))}
+            onClick={async ({ key }) => {
+              await ProjectService.updateProject(record.id, { status: key });
+              await loadData();
+            }}
+          />
+        );
+        return (
+          <Dropdown overlay={menu} placement="bottomLeft">
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', cursor: 'pointer', color: '#666' }}>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: currentStatus?.color || '#999', marginRight: 6 }} />
+                {currentStatus?.label || s}
+              </span>
+              <DownOutlined style={{ fontSize: 12, color: '#999' }} />
+            </span>
+          </Dropdown>
+        );
+      },
+    },
+    {
+      title: '优先级',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 110,
+      sorter: true,
+      render: (p: string, record: Project) => {
+        const currentPriority = priorities.find((pr) => pr.id === p);
+        const menu = (
+          <Menu
+            items={priorities.map((pr) => ({
+              key: pr.id,
+              label: (
+                <span>
+                  <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: pr.color, marginRight: 8 }} />
+                  {pr.label}
+                </span>
+              ),
+            }))}
+            onClick={async ({ key }) => {
+              await ProjectService.updateProject(record.id, { priority: key });
+              await loadData();
+            }}
+          />
+        );
+        return (
+          <Dropdown overlay={menu} placement="bottomLeft">
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', cursor: 'pointer', color: '#666' }}>
+              <span>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', backgroundColor: currentPriority?.color || '#999', marginRight: 6 }} />
+                {currentPriority?.label || p}
+              </span>
+              <DownOutlined style={{ fontSize: 12, color: '#999' }} />
+            </span>
+          </Dropdown>
+        );
       },
     },
     { title: '工作室', dataIndex: 'studioName', key: 'studioName', width: 100, sorter: true },
@@ -368,83 +440,11 @@ export function AdminPage() {
           </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
-          <Form.Item name="color" label="颜色">
-            <div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                {COLOR_OPTIONS.map((c) => (
-                  <span
-                    key={c}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 28,
-                      height: 28,
-                      borderRadius: '50%',
-                      backgroundColor: c,
-                      cursor: 'pointer',
-                      border: projectColor === c ? '3px solid #1677ff' : '2px solid transparent',
-                      boxShadow: projectColor === c ? '0 0 0 3px rgba(22, 119, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
-                      transition: 'all 0.2s',
-                      transform: projectColor === c ? 'scale(1.1)' : 'scale(1)',
-                    }}
-                    onClick={() => {
-                      setProjectColor(c);
-                      projectForm.setFieldsValue({ color: c });
-                    }}
-                  >
-                    {projectColor === c && <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</span>}
-                  </span>
-                ))}
-                <div
-                  style={{
-                    position: 'relative',
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    cursor: 'pointer',
-                  }}
-                  title="自定义颜色"
-                >
-                  <Input
-                    type="color"
-                    value={projectColor || '#1677ff'}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      borderRadius: '50%',
-                      border: '2px dashed #999',
-                      cursor: 'pointer',
-                      opacity: 1,
-                      padding: 0,
-                      appearance: 'none',
-                    }}
-                    onChange={(e) => {
-                      const color = e.target.value;
-                      setProjectColor(color);
-                      projectForm.setFieldsValue({ color });
-                    }}
-                  />
-                  <span
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#999',
-                      fontSize: 14,
-                      pointerEvents: 'none',
-                    }}
-                  >+</span>
-                </div>
-              </div>
-            </div>
-          </Form.Item>
           <Form.Item name="status" label="状态">
             <Select options={projectStatuses.map((s) => ({ value: s.id, label: s.label }))} />
+          </Form.Item>
+          <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
+            <Select options={priorities.map((p) => ({ value: p.id, label: p.label }))} />
           </Form.Item>
           <Form.Item name="studioName" label="工作室名称"><Input /></Form.Item>
           <Form.Item name="contactPerson" label="对接人"><Input /></Form.Item>

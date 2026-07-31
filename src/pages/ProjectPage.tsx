@@ -6,7 +6,7 @@ import type { DataNode } from 'antd/es/tree';
 import { ProjectService } from '../services/ProjectService';
 import { TaskService } from '../services/TaskService';
 import type { Project, ProjectGroup, Task } from '../types';
-import { ConfigService } from '../services/ConfigService';
+import { useConfig } from '../contexts/ConfigContext';
 
 export function ProjectPage() {
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
@@ -18,17 +18,20 @@ export function ProjectPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [taskForm] = Form.useForm();
-  const [priorities, setPriorities] = useState<{ id: string; label: string; color: string }[]>([]);
-  const [taskStatuses, setTaskStatuses] = useState<{ id: string; label: string; color: string }[]>([]);
-  const [projectStatuses, setProjectStatuses] = useState<{ id: string; label: string; color: string }[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [sortInfo, setSortInfo] = useState<{ key: string; order: 'ascend' | 'descend' }>({ key: 'startTime', order: 'descend' });
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const { priorities, taskStatuses, projectStatuses } = useConfig();
 
   useEffect(() => {
     loadData();
-    loadConfig();
   }, []);
+
+  useEffect(() => {
+    // 默认展开所有分组
+    setExpandedKeys(groups.map((g) => `group-${g.id}`));
+  }, [groups]);
 
   async function loadData() {
     await ProjectService.resetCache();
@@ -43,39 +46,56 @@ export function ProjectPage() {
     setTasks(t);
   }
 
-  async function loadConfig() {
-    const [p, s, ps] = await Promise.all([ConfigService.getPriorities(), ConfigService.getTaskStatuses(), ConfigService.getProjectStatuses()]);
-    setPriorities(p);
-    setTaskStatuses(s);
-    setProjectStatuses(ps);
-  }
-
   const filteredProjects = statusFilter.length === 0 ? projects : projects.filter((p) => statusFilter.includes(p.status));
 
-  const treeData: DataNode[] = groups.map((group) => ({
-    key: `group-${group.id}`,
-    title: (
-      <span>
-        {group.color && <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', backgroundColor: group.color, marginRight: 8 }} />}
-        {group.name}
-      </span>
-    ),
-    children: filteredProjects
-      .filter((p) => p.groupId === group.id)
-      .map((p) => ({
-        key: `project-${p.id}`,
-        title: (
-          <span>
-            {p.color && <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', backgroundColor: p.color, marginRight: 8 }} />}
-            {p.name}
-            <Tag color={getStatusColor(p.status)} style={{ marginLeft: 8, fontSize: 10 }}>
-              {projectStatuses.find((s) => s.id === p.status)?.label || p.status}
-            </Tag>
-          </span>
-        ),
-        isLeaf: true,
-      })),
-  }));
+  const priorityOrder: Record<string, number> = priorities.reduce((acc, p, index) => {
+    acc[p.id] = index;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const treeData: DataNode[] = groups.map((group) => {
+    const isExpanded = expandedKeys.includes(`group-${group.id}`);
+    return {
+      key: `group-${group.id}`,
+      title: (
+        <span
+          style={{ cursor: 'pointer', userSelect: 'none' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isExpanded) {
+              setExpandedKeys(expandedKeys.filter((k) => k !== `group-${group.id}`));
+            } else {
+              setExpandedKeys([...expandedKeys, `group-${group.id}`]);
+            }
+          }}
+        >
+          {group.color && <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', backgroundColor: group.color, marginRight: 8 }} />}
+          {group.name}
+        </span>
+      ),
+      children: filteredProjects
+        .filter((p) => p.groupId === group.id)
+        .sort((a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2))
+        .map((p) => {
+          const currentPriority = priorities.find((pr) => pr.id === p.priority);
+          return {
+            key: `project-${p.id}`,
+            title: (
+              <span>
+                {p.name}
+                <Tag color={currentPriority?.color || '#999'} style={{ marginLeft: 6, fontSize: 10 }}>
+                  {currentPriority?.label || p.priority}
+                </Tag>
+                <Tag color={getStatusColor(p.status)} style={{ marginLeft: 8, fontSize: 10 }}>
+                  {projectStatuses.find((s) => s.id === p.status)?.label || p.status}
+                </Tag>
+              </span>
+            ),
+            isLeaf: true,
+          };
+        }),
+    };
+  });
 
   function getStatusColor(status: string): string {
     const found = projectStatuses.find((s) => s.id === status);
@@ -314,7 +334,12 @@ export function ProjectPage() {
                 }}
               />
             </div>
-            <Tree treeData={treeData} onSelect={onTreeSelect} defaultExpandAll />
+            <Tree
+              treeData={treeData}
+              onSelect={onTreeSelect}
+              expandedKeys={expandedKeys}
+              onExpand={(keys) => setExpandedKeys(keys)}
+            />
           </>
         )}
         {collapsed && (
@@ -364,7 +389,7 @@ export function ProjectPage() {
       </div>
 
       <Modal title={editingTask ? '编辑任务' : '新建任务'} open={taskModalOpen} onOk={handleSaveTask} onCancel={() => setTaskModalOpen(false)} width={560}>
-        <Form form={taskForm} layout="vertical" initialValues={{ priority: priorities[1]?.id || 'medium', status: taskStatuses[0]?.id || 'todo', workHours: 0 }}>
+        <Form form={taskForm} layout="vertical" initialValues={{ priority: priorities[0]?.id || 'medium', status: taskStatuses[0]?.id || 'todo', workHours: 0 }}>
           <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
           <Space>

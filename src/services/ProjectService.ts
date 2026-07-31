@@ -1,6 +1,7 @@
 import type { Project, ProjectGroup, ProjectStatus, ProjectsData } from '../types';
 import { FileService } from './FileService';
 import { TaskService } from './TaskService';
+import { ConfigService } from './ConfigService';
 
 const DEFAULT_DATA: ProjectsData = { groups: [], projects: [] };
 
@@ -8,13 +9,14 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
-function migrateProject(raw: Partial<Project> & { id: string; groupId: string; name: string }): Project {
+function migrateProject(raw: Partial<Project> & { id: string; groupId: string; name: string }, defaultPriority: string): Project {
   return {
     id: raw.id,
     groupId: raw.groupId,
     name: raw.name,
     description: raw.description ?? '',
     status: (raw.status as ProjectStatus) ?? 'active',
+    priority: raw.priority ?? defaultPriority,
     color: raw.color,
     studioName: raw.studioName ?? '',
     contactPerson: raw.contactPerson ?? '',
@@ -27,10 +29,13 @@ export class ProjectService {
 
   static async load(): Promise<ProjectsData> {
     if (!ProjectService.data) {
-      const raw = await FileService.readJson<ProjectsData>('projects.json', DEFAULT_DATA);
+      const [raw, defaultPriority] = await Promise.all([
+        FileService.readJson<ProjectsData>('projects.json', DEFAULT_DATA),
+        ConfigService.getDefaultPriorityId(),
+      ]);
       ProjectService.data = {
         groups: raw.groups ?? [],
-        projects: (raw.projects ?? []).map(migrateProject),
+        projects: (raw.projects ?? []).map((p) => migrateProject(p, defaultPriority)),
       };
     }
     return ProjectService.data;
@@ -81,18 +86,22 @@ export class ProjectService {
   }
 
   static async addProject(groupId: string, fields: Partial<Project> & { name: string }): Promise<Project> {
-    const data = await ProjectService.load();
+    const [data, defaultPriority] = await Promise.all([
+      ProjectService.load(),
+      ConfigService.getDefaultPriorityId(),
+    ]);
     const project: Project = migrateProject({
       id: generateId(),
       groupId,
       name: fields.name,
       description: fields.description,
       status: fields.status,
+      priority: fields.priority,
       color: fields.color,
       studioName: fields.studioName,
       contactPerson: fields.contactPerson,
       customFields: fields.customFields,
-    });
+    }, defaultPriority);
     data.projects.push(project);
     await ProjectService.save();
     return project;
