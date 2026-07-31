@@ -18,7 +18,8 @@ export interface Project {
   groupId: string;
   name: string;
   description: string;
-  status: ProjectStatus;
+  status: string;
+  priority: string;
   color?: string;
   studioName: string;
   contactPerson: string;
@@ -66,6 +67,7 @@ export interface Config {
   priorities: PriorityOption[];
   taskStatuses: StatusOption[];
   projectStatuses: StatusOption[];
+  leaveTypes: StatusOption[];
 }
 
 export interface ProjectsData {
@@ -109,6 +111,14 @@ export const DEFAULT_PROJECT_STATUSES: StatusOption[] = [
   { id: 'terminated', label: '终止', color: '#f5222d' },
 ];
 
+export const DEFAULT_LEAVE_TYPES: StatusOption[] = [
+  { id: 'sick', label: '病假', color: '#f5222d' },
+  { id: 'personal', label: '事假', color: '#fa8c16' },
+  { id: 'annual', label: '年假', color: '#1677ff' },
+  { id: 'maternity', label: '产假', color: '#eb2f96' },
+  { id: 'paternity', label: '陪产假', color: '#722ed1' },
+];
+
 export const DEFAULT_CONFIG: Config = {
   monthStartDay: 26,
   monthEndDay: 25,
@@ -117,4 +127,5 @@ export const DEFAULT_CONFIG: Config = {
   priorities: DEFAULT_PRIORITIES,
   taskStatuses: DEFAULT_TASK_STATUSES,
   projectStatuses: DEFAULT_PROJECT_STATUSES,
+  leaveTypes: DEFAULT_LEAVE_TYPES,
 };

@@ -1,0 +1,296 @@
+{
+  "exportedAt": "2026-07-26T17:28:29.963Z",
+  "config.json": {
+    "monthStartDay": 26,
+    "monthEndDay": 25,
+    "weekStartDay": 4,
+    "dataPath": "",
+    "priorities": [
+      {
+        "id": "low",
+        "label": "P2",
+        "color": "#d9d9d9"
+      },
+      {
+        "id": "medium",
+        "label": "P1",
+        "color": "#fa8c16"
+      },
+      {
+        "id": "high",
+        "label": "P0",
+        "color": "#f5222d"
+      }
+    ],
+    "taskStatuses": [
+      {
+        "id": "todo",
+        "label": "待办",
+        "color": "#d9d9d9"
+      },
+      {
+        "id": "in_progress",
+        "label": "进行中",
+        "color": "#1677ff"
+      },
+      {
+        "id": "done",
+        "label": "已完成",
+        "color": "#52c41a"
+      }
+    ],
+    "projectStatuses": [
+      {
+        "id": "active",
+        "label": "进行中",
+        "color": "#52c41a"
+      },
+      {
+        "id": "delivered",
+        "label": "已交付",
+        "color": "#1677ff"
+      },
+      {
+        "id": "paused",
+        "label": "暂停",
+        "color": "#fa8c16"
+      },
+      {
+        "id": "terminated",
+        "label": "终止",
+        "color": "#f5222d"
+      }
+    ],
+    "leaveTypes": [
+      {
+        "id": "sick",
+        "label": "病假",
+        "color": "#f5222d"
+      },
+      {
+        "id": "personal",
+        "label": "事假",
+        "color": "#fa8c16"
+      },
+      {
+        "id": "annual",
+        "label": "年假",
+        "color": "#1677ff"
+      },
+      {
+        "id": "maternity",
+        "label": "产假",
+        "color": "#eb2f96"
+      },
+      {
+        "id": "paternity",
+        "label": "陪产假",
+        "color": "#722ed1"
+      }
+    ]
+  },
+  "projects.json": {
+    "groups": [
+      {
+        "id": "b7215bf5-7437-4467-9b72-31b0cd815cce",
+        "name": "自动绑定",
+        "description": "MetaHuman人脸绑定",
+        "color": "#52c41a"
+      },
+      {
+        "id": "859d7214-e3b6-4c66-b19e-72c221acbe30",
+        "name": "服装蒙皮",
+        "description": "服装自动蒙皮",
+        "color": "#722ed1"
+      },
+      {
+        "id": "4ab5247d-0fb4-4e38-aeb7-4e8d1993f2fc",
+        "name": "服装迁移",
+        "description": "服装迁移&适配",
+        "color": "#e16bac"
+      },
+      {
+        "id": "665561b8-d1de-4fa4-a8fc-6ce156daeae7",
+        "name": "唯美MH",
+        "description": "唯美MetaHuman相关",
+        "color": "#fa8c16"
+      },
+      {
+        "id": "6946eb7a-5c94-455d-a4fa-11d5819e1e00",
+        "name": "穿插检测",
+        "description": "穿插检测相关",
+        "color": "#1677ff"
+      }
+    ],
+    "projects": [
+      {
+        "id": "0282b5de-8139-45fb-9939-b82a8dc821db",
+        "groupId": "b7215bf5-7437-4467-9b72-31b0cd815cce",
+        "name": "Q01 AutoRig",
+        "description": "Q01唯美MetaHuman绑定",
+        "status": "active",
+        "priority": "medium",
+        "studioName": "Q01",
+        "contactPerson": "",
+        "customFields": []
+      },
+      {
+        "id": "599b15aa-6de6-4d2f-b53d-53abc4e36be4",
+        "groupId": "b7215bf5-7437-4467-9b72-31b0cd815cce",
+        "name": "H72 AutoRig",
+        "description": "H72唯美MetaHuman绑定，lod3骨骼标准",
+        "status": "active",
+        "priority": "medium",
+        "studioName": "H72",
+        "contactPerson": "侯俊",
+        "customFields": []
+      },
+      {
+        "id": "b1c7c408-4f5b-4b68-8845-8ac66cf3de31",
+        "groupId": "859d7214-e3b6-4c66-b19e-72c221acbe30",
+        "name": "G18服装蒙皮",
+        "description": "最大化蒙皮拷贝工具",
+        "status": "active",
+        "priority": "high",
+        "studioName": "G18",
+        "contactPerson": "",
+        "customFields": []
+      },
+      {
+        "id": "086af128-5197-42a8-9aee-8e7ccced386d",
+        "groupId": "b7215bf5-7437-4467-9b72-31b0cd815cce",
+        "name": "TX3 AutoRig",
+        "description": "TX3唯美MetaHuman绑定，lod4.5骨骼标准",
+        "status": "active",
+        "priority": "medium",
+        "studioName": "TX3",
+        "contactPerson": "",
+        "customFields": []
+      },
+      {
+        "id": "c65da102-bf22-4586-a628-dd08f3c6e479",
+        "groupId": "859d7214-e3b6-4c66-b19e-72c221acbe30",
+        "name": "G37角色蒙皮",
+        "description": "G37小纸人和QQ人自动蒙皮",
+        "status": "active",
+        "priority": "low",
+        "studioName": "G37",
+        "contactPerson": "",
+        "customFields": []
+      },
+      {
+        "id": "23422d31-f053-4c57-9ad1-0221f07b3d46",
+        "groupId": "b7215bf5-7437-4467-9b72-31b0cd815cce",
+        "name": "S18 AutoRig",
+        "description": "S18唯美MetaHuman绑定，lod3骨骼标准",
+        "status": "active",
+        "priority": "medium",
+        "color": "#faad14",
+        "studioName": "S18",
+        "contactPerson": "",
+        "customFields": []
+      },
+      {
+        "id": "8e141459-908c-46ec-a002-81acef0c7473",
+        "groupId": "859d7214-e3b6-4c66-b19e-72c221acbe30",
+        "name": "MHDY召唤兽蒙皮",
+        "description": "召唤兽蒙皮，每个角色的骨架都不同，自动计算蒙皮权重",
+        "status": "active",
+        "priority": "high",
+        "studioName": "MH",
+        "contactPerson": "何陈佑",
+        "customFields": []
+      },
+      {
+        "id": "16ad3106-878a-4c32-b5e8-c20b877c407c",
+        "groupId": "4ab5247d-0fb4-4e38-aeb7-4e8d1993f2fc",
+        "name": "G83to101服装迁移",
+        "description": "G83时装模型、骨骼、蒙皮从G83体型迁移到G101体型",
+        "status": "active",
+        "priority": "medium",
+        "studioName": "G83",
+        "contactPerson": "提颖浩",
+        "customFields": []
+      },
+      {
+        "id": "8a051523-d8d4-4aa8-a98f-4d96f78dfefa",
+        "groupId": "665561b8-d1de-4fa4-a8fc-6ce156daeae7",
+        "name": "CM工具开发",
+        "description": "CharacterMaker工具开发",
+        "status": "active",
+        "priority": "high",
+        "studioName": "A61",
+        "contactPerson": "",
+        "customFields": []
+      },
+      {
+        "id": "ff939abf-913e-43a2-958e-119e78c060e3",
+        "groupId": "665561b8-d1de-4fa4-a8fc-6ce156daeae7",
+        "name": "A61 AutoRig",
+        "description": "",
+        "status": "active",
+        "priority": "high",
+        "studioName": "A61",
+        "contactPerson": "",
+        "customFields": []
+      }
+    ]
+  },
+  "tasks.json": {
+    "tasks": [
+      {
+        "id": "69c8d662-b4b1-4960-b09f-9f8071bd2b07",
+        "projectId": "0282b5de-8139-45fb-9939-b82a8dc821db",
+        "title": "adv控制器优化",
+        "priority": "high",
+        "status": "in_progress",
+        "startTime": "2026-07-24T16:00:00.000Z",
+        "finishTime": "2026-07-24T16:00:00.000Z",
+        "workHours": 1
+      },
+      {
+        "id": "041eea07-0d3c-495c-8b20-e2ce332f68ce",
+        "projectId": "0282b5de-8139-45fb-9939-b82a8dc821db",
+        "title": "AAA",
+        "priority": "medium",
+        "status": "done",
+        "startTime": "2026-07-24T16:00:00.000Z",
+        "finishTime": null,
+        "workHours": 2
+      },
+      {
+        "id": "3cf8df14-36fc-4dcc-b431-2756877ccb40",
+        "projectId": "599b15aa-6de6-4d2f-b53d-53abc4e36be4",
+        "title": "自动绑定脚本",
+        "priority": "medium",
+        "status": "done",
+        "startTime": null,
+        "finishTime": null,
+        "workHours": 5
+      },
+      {
+        "id": "497abe5e-c21a-479d-a655-ff22e0b11e78",
+        "projectId": "b1c7c408-4f5b-4b68-8845-8ac66cf3de31",
+        "title": "工具优化",
+        "priority": "medium",
+        "status": "done",
+        "startTime": null,
+        "finishTime": "2026-07-26",
+        "workHours": 8
+      },
+      {
+        "id": "6b18b566-5c36-403f-a53a-01239380661a",
+        "projectId": "ff939abf-913e-43a2-958e-119e78c060e3",
+        "title": "PolyHammer MetaHuman插件调研",
+        "priority": "low",
+        "status": "todo",
+        "startTime": null,
+        "finishTime": null,
+        "workHours": 4
+      }
+    ]
+  },
+  "leave.json": {
+    "leaves": []
+  }
+}

@@ -1,5 +1,5 @@
 import type { Config, PriorityOption, StatusOption } from '../types';
-import { DEFAULT_CONFIG, DEFAULT_PRIORITIES, DEFAULT_TASK_STATUSES, DEFAULT_PROJECT_STATUSES } from '../types';
+import { DEFAULT_CONFIG, DEFAULT_PRIORITIES, DEFAULT_TASK_STATUSES, DEFAULT_PROJECT_STATUSES, DEFAULT_LEAVE_TYPES } from '../types';
 import { FileService } from './FileService';
 
 function mergeConfig(raw: Partial<Config>): Config {
@@ -9,6 +9,7 @@ function mergeConfig(raw: Partial<Config>): Config {
     priorities: raw.priorities?.length ? raw.priorities : DEFAULT_PRIORITIES,
     taskStatuses: raw.taskStatuses?.length ? raw.taskStatuses : DEFAULT_TASK_STATUSES,
     projectStatuses: raw.projectStatuses?.length ? raw.projectStatuses : DEFAULT_PROJECT_STATUSES,
+    leaveTypes: raw.leaveTypes?.length ? raw.leaveTypes : DEFAULT_LEAVE_TYPES,
   };
 }
 
@@ -43,9 +44,14 @@ export class ConfigService {
     return config.projectStatuses;
   }
 
+  static async getLeaveTypes(): Promise<StatusOption[]> {
+    const config = await ConfigService.getConfig();
+    return config.leaveTypes;
+  }
+
   static async getDefaultPriorityId(): Promise<string> {
     const priorities = await ConfigService.getPriorities();
-    return priorities.find((p) => p.id === 'medium')?.id ?? priorities[0]?.id ?? 'medium';
+    return priorities[0]?.id ?? 'medium';
   }
 
   static async getDefaultStatusId(): Promise<string> {

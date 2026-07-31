@@ -6,6 +6,7 @@ import { AdminPage } from './pages/AdminPage';
 import { StatisticsPage } from './pages/StatisticsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import type { PageKey } from './types';
+import { ConfigProvider } from './contexts/ConfigContext';
 import 'dayjs/locale/zh-cn';
 import dayjs from 'dayjs';
 
@@ -23,9 +24,11 @@ function App() {
   };
 
   return (
-    <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
-      {pages[currentPage]}
-    </AppLayout>
+    <ConfigProvider>
+      <AppLayout currentPage={currentPage} onPageChange={setCurrentPage}>
+        {pages[currentPage]}
+      </AppLayout>
+    </ConfigProvider>
   );
 }
 
