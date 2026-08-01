@@ -5,8 +5,8 @@ import { ProjectService } from '../services/ProjectService';
 import type { Project, ProjectGroup } from '../types';
 import type { SorterResult } from 'antd/es/table/interface';
 import { useConfig } from '../contexts/ConfigContext';
-
-const COLOR_OPTIONS = ['#1677ff', '#52c41a', '#f5222d', '#fa8c16', '#722ed1', '#13c2c2', '#faad14', '#eb2f96'];
+import { ProjectPage } from './ProjectPage';
+import { ColorPicker } from './SettingsPage';
 
 export function AdminPage() {
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
@@ -343,6 +343,9 @@ export function AdminPage() {
             />
           </Card>
         </Tabs.TabPane>
+        <Tabs.TabPane tab="任务管理" key="tasks">
+          <ProjectPage />
+        </Tabs.TabPane>
       </Tabs>
 
       <Modal title={editingGroup ? '编辑分组' : '新建分组'} open={groupModalOpen} onOk={handleAddGroup} onCancel={() => {
@@ -353,79 +356,7 @@ export function AdminPage() {
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
           <Form.Item name="color" label="颜色">
-            <div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                {COLOR_OPTIONS.map((c) => (
-                  <span
-                    key={c}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 28,
-                      height: 28,
-                      borderRadius: '50%',
-                      backgroundColor: c,
-                      cursor: 'pointer',
-                      border: groupColor === c ? '3px solid #1677ff' : '2px solid transparent',
-                      boxShadow: groupColor === c ? '0 0 0 3px rgba(22, 119, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
-                      transition: 'all 0.2s',
-                      transform: groupColor === c ? 'scale(1.1)' : 'scale(1)',
-                    }}
-                    onClick={() => {
-                      setGroupColor(c);
-                      groupForm.setFieldsValue({ color: c });
-                    }}
-                  >
-                    {groupColor === c && <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</span>}
-                  </span>
-                ))}
-                <div
-                  style={{
-                    position: 'relative',
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    cursor: 'pointer',
-                  }}
-                  title="自定义颜色"
-                >
-                  <Input
-                    type="color"
-                    value={groupColor || '#1677ff'}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      borderRadius: '50%',
-                      border: '2px dashed #999',
-                      cursor: 'pointer',
-                      opacity: 1,
-                      padding: 0,
-                      appearance: 'none',
-                    }}
-                    onChange={(e) => {
-                      const color = e.target.value;
-                      setGroupColor(color);
-                      groupForm.setFieldsValue({ color });
-                    }}
-                  />
-                  <span
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#999',
-                      fontSize: 14,
-                      pointerEvents: 'none',
-                    }}
-                  >+</span>
-                </div>
-              </div>
-            </div>
+            <ColorPicker color={groupColor} setColor={setGroupColor} form={groupForm} />
           </Form.Item>
         </Form>
       </Modal>

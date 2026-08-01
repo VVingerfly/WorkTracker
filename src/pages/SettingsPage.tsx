@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { DragEvent as ReactDragEvent } from 'react';
 import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, message } from 'antd';
-import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
+import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined, FolderOutlined, HolderOutlined } from '@ant-design/icons';
 import { ConfigService } from '../services/ConfigService';
 import { FileService } from '../services/FileService';
 import { ExportService } from '../services/ExportService';
@@ -10,6 +11,89 @@ import type { Config, PriorityOption, StatusOption } from '../types';
 import { useConfig } from '../contexts/ConfigContext';
 
 const COLOR_OPTIONS = ['#1677ff', '#52c41a', '#f5222d', '#fa8c16', '#722ed1', '#13c2c2', '#faad14', '#eb2f96'];
+
+// 模块级 dirty 标志，供 AppLayout 在切换页面时检查
+let settingsDirty = false;
+export function isSettingsDirty() { return settingsDirty; }
+export function clearSettingsDirty() { settingsDirty = false; }
+
+// 共享颜色选择器组件
+export function ColorPicker({ color, setColor, form }: { color: string; setColor: (c: string) => void; form: any }) {
+  const isPreset = COLOR_OPTIONS.includes(color);
+  const isCustom = !!color && !isPreset;
+
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}>
+      {COLOR_OPTIONS.map((c) => (
+        <span
+          key={c}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            backgroundColor: c,
+            cursor: 'pointer',
+            border: color === c ? '3px solid #1677ff' : '2px solid transparent',
+            boxShadow: color === c ? '0 0 0 3px rgba(22, 119, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+            transition: 'all 0.2s',
+            transform: color === c ? 'scale(1.1)' : 'scale(1)',
+          }}
+          onClick={() => {
+            setColor(c);
+            form.setFieldsValue({ color: c });
+          }}
+        >
+          {color === c && <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</span>}
+        </span>
+      ))}
+      {/* 自定义颜色：隐藏原生 input，用样式化的圆展示选中颜色 */}
+      <label
+        style={{
+          position: 'relative',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          cursor: 'pointer',
+          backgroundColor: isCustom ? color : '#fff',
+          border: isCustom ? '3px solid #1677ff' : '2px dashed #999',
+          boxShadow: isCustom ? '0 0 0 3px rgba(22, 119, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+          transform: isCustom ? 'scale(1.1)' : 'scale(1)',
+          transition: 'all 0.2s',
+        }}
+        title="自定义颜色"
+      >
+        {isCustom ? (
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</span>
+        ) : (
+          <span style={{ color: '#999', fontSize: 14 }}>+</span>
+        )}
+        <input
+          type="color"
+          value={color || '#1677ff'}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            opacity: 0,
+            cursor: 'pointer',
+          }}
+          onChange={(e) => {
+            const c = e.target.value;
+            setColor(c);
+            form.setFieldsValue({ color: c });
+          }}
+        />
+      </label>
+    </div>
+  );
+}
 
 export function SettingsPage() {
   const [form] = Form.useForm<Config>();
@@ -36,8 +120,30 @@ export function SettingsPage() {
   const [dataDir, setDataDir] = useState<string>('');
   const [changingDir, setChangingDir] = useState(false);
   const { config, saveConfig } = useConfig();
+  const [savedSnapshot, setSavedSnapshot] = useState<string>('');
 
   useEffect(() => { loadConfig(); loadDataDir(); }, [config]);
+
+  // 统一的对比函数：使用 form.getFieldValue 而非 form.getFieldsValue，
+  // 因为后者只返回已挂载（注册）的 Form.Item 的值，折叠面板未展开时会导致结构不匹配
+  function buildCompareString(p: PriorityOption[], ts: StatusOption[], ps: StatusOption[], lt: StatusOption[]) {
+    return JSON.stringify({
+      monthStartDay: form.getFieldValue('monthStartDay'),
+      monthEndDay: form.getFieldValue('monthEndDay'),
+      weekStartDay: form.getFieldValue('weekStartDay'),
+      priorities: p,
+      taskStatuses: ts,
+      projectStatuses: ps,
+      leaveTypes: lt,
+    });
+  }
+
+  // 检查表单数据是否与已保存的快照不同
+  useEffect(() => {
+    if (!config) return;
+    const current = buildCompareString(priorities, taskStatuses, projectStatuses, leaveTypes);
+    settingsDirty = current !== savedSnapshot;
+  });
 
   async function loadDataDir() {
     try {
@@ -55,6 +161,9 @@ export function SettingsPage() {
     setTaskStatuses(config.taskStatuses);
     setProjectStatuses(config.projectStatuses);
     setLeaveTypes(config.leaveTypes);
+    const snap = buildCompareString(config.priorities, config.taskStatuses, config.projectStatuses, config.leaveTypes);
+    setSavedSnapshot(snap);
+    settingsDirty = false;
   }
 
   async function handleSave() {
@@ -64,6 +173,9 @@ export function SettingsPage() {
     values.projectStatuses = projectStatuses;
     values.leaveTypes = leaveTypes;
     await saveConfig(values);
+    const snap = buildCompareString(priorities, taskStatuses, projectStatuses, leaveTypes);
+    setSavedSnapshot(snap);
+    settingsDirty = false;
     message.success('配置已保存');
   }
 
@@ -250,124 +362,100 @@ export function SettingsPage() {
     message.success('请假类型已删除');
   }
 
-  const ColorPicker = ({ color, setColor, form }: { color: string; setColor: (c: string) => void; form: any }) => (
-    <div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-        {COLOR_OPTIONS.map((c) => (
-          <span
-            key={c}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              backgroundColor: c,
-              cursor: 'pointer',
-              border: color === c ? '3px solid #1677ff' : '2px solid transparent',
-              boxShadow: color === c ? '0 0 0 3px rgba(22, 119, 255, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
-              transition: 'all 0.2s',
-              transform: color === c ? 'scale(1.1)' : 'scale(1)',
-            }}
-            onClick={() => {
-              setColor(c);
-              form.setFieldsValue({ color: c });
-            }}
-          >
-            {color === c && <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</span>}
-          </span>
-        ))}
-        <div
-          style={{
-            position: 'relative',
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            cursor: 'pointer',
-          }}
-          title="自定义颜色"
-        >
-          <Input
-            type="color"
-            value={color || '#1677ff'}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              borderRadius: '50%',
-              border: '2px dashed #999',
-              cursor: 'pointer',
-              opacity: 1,
-              padding: 0,
-              appearance: 'none',
-            }}
-            onChange={(e) => {
-              const c = e.target.value;
-              setColor(c);
-              form.setFieldsValue({ color: c });
-            }}
-          />
-          <span
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#999',
-              fontSize: 14,
-              pointerEvents: 'none',
-            }}
-          >+</span>
-        </div>
-      </div>
-    </div>
-  );
+  const StatusTable = ({ data, onEdit, onDelete, onReorder }: {
+    data: StatusOption[];
+    onEdit: (s?: StatusOption) => void;
+    onDelete: (id: string) => void;
+    onReorder: (newData: StatusOption[]) => void;
+  }) => {
+    const [dragIndex, setDragIndex] = useState<number | null>(null);
+    const [overIndex, setOverIndex] = useState<number | null>(null);
 
-  const StatusTable = ({ data, onEdit, onDelete }: { data: StatusOption[]; onEdit: (s?: StatusOption) => void; onDelete: (id: string) => void }) => (
-    <Table
-      dataSource={data}
-      columns={[
-        { title: 'ID', dataIndex: 'id', key: 'id', width: 120 },
-        { title: '标签', dataIndex: 'label', key: 'label', width: 80 },
-        {
-          title: '颜色',
-          key: 'color',
-          width: 100,
-          render: (_: unknown, record: StatusOption) => (
-            <Space>
-              <span style={{ display: 'inline-block', width: 24, height: 24, borderRadius: '4px', backgroundColor: record.color }} />
-              <span style={{ fontSize: 12 }}>{record.color}</span>
-            </Space>
-          ),
-        },
-        {
-          title: '操作',
-          key: 'actions',
-          width: 120,
-          render: (_: unknown, record: StatusOption) => (
-            <Space>
-              <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEdit(record)} />
-              <Popconfirm title="确定删除？" onConfirm={() => onDelete(record.id)}>
-                <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            </Space>
-          ),
-        },
-      ]}
-      rowKey="id"
-      size="small"
-      pagination={false}
-    />
-  );
+    const handleDragStart = (index: number) => setDragIndex(index);
+    const handleDragOver = (e: ReactDragEvent, index: number) => {
+      e.preventDefault();
+      if (dragIndex !== null && dragIndex !== index) setOverIndex(index);
+    };
+    const handleDrop = (index: number) => {
+      if (dragIndex === null || dragIndex === index) {
+        setDragIndex(null);
+        setOverIndex(null);
+        return;
+      }
+      const newData = [...data];
+      const [moved] = newData.splice(dragIndex, 1);
+      newData.splice(index, 0, moved);
+      onReorder(newData);
+      setDragIndex(null);
+      setOverIndex(null);
+    };
+
+    return (
+      <Table
+        dataSource={data}
+        columns={[
+          {
+            title: '',
+            key: 'sort',
+            width: 40,
+            render: (_: unknown, __: StatusOption, index: number) => (
+              <HolderOutlined
+                style={{ cursor: 'grab', color: '#999', fontSize: 14 }}
+                title="拖动排序"
+              />
+            ),
+          },
+          { title: 'ID', dataIndex: 'id', key: 'id', width: 120 },
+          { title: '标签', dataIndex: 'label', key: 'label', width: 80 },
+          {
+            title: '颜色',
+            key: 'color',
+            width: 100,
+            render: (_: unknown, record: StatusOption) => (
+              <Space>
+                <span style={{ display: 'inline-block', width: 24, height: 24, borderRadius: '4px', backgroundColor: record.color }} />
+                <span style={{ fontSize: 12 }}>{record.color}</span>
+              </Space>
+            ),
+          },
+          {
+            title: '操作',
+            key: 'actions',
+            width: 120,
+            render: (_: unknown, record: StatusOption) => (
+              <Space>
+                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEdit(record)} />
+                <Popconfirm title="确定删除？" onConfirm={() => onDelete(record.id)}>
+                  <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]}
+        rowKey="id"
+        size="small"
+        pagination={false}
+        onRow={(_, index) => ({
+          draggable: true,
+          onDragStart: () => index !== undefined && handleDragStart(index),
+          onDragOver: (e) => index !== undefined && handleDragOver(e, index),
+          onDrop: () => index !== undefined && handleDrop(index),
+          onDragEnd: () => { setDragIndex(null); setOverIndex(null); },
+          style: {
+            cursor: 'grab',
+            background: overIndex === index ? '#f0f7ff' : undefined,
+            opacity: dragIndex === index ? 0.5 : 1,
+          },
+        })}
+      />
+    );
+  };
 
   return (
     <div>
       <h2 style={{ marginBottom: 12 }}>设置</h2>
       <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16, maxWidth: 720 }}>
-        <Button type="primary" size="small" onClick={handleSave}>保存配置</Button>
+        <Button id="settings-save-btn" type="primary" size="small" onClick={handleSave}>保存配置</Button>
       </div>
       
       <Collapse defaultActiveKey={[]} style={{ maxWidth: 720 }}>
@@ -403,7 +491,7 @@ export function SettingsPage() {
             <Space style={{ marginBottom: 12 }}>
               <Button size="small" icon={<PlusOutlined />} onClick={() => openEditPriority()}>添加优先级</Button>
             </Space>
-            <StatusTable data={priorities} onEdit={openEditPriority} onDelete={handleDeletePriority} />
+            <StatusTable data={priorities} onEdit={openEditPriority} onDelete={handleDeletePriority} onReorder={setPriorities} />
           </Card>
         </Collapse.Panel>
 
@@ -412,7 +500,7 @@ export function SettingsPage() {
             <Space style={{ marginBottom: 12 }}>
               <Button size="small" icon={<PlusOutlined />} onClick={() => openEditStatus()}>添加状态</Button>
             </Space>
-            <StatusTable data={taskStatuses} onEdit={openEditStatus} onDelete={handleDeleteStatus} />
+            <StatusTable data={taskStatuses} onEdit={openEditStatus} onDelete={handleDeleteStatus} onReorder={setTaskStatuses} />
           </Card>
         </Collapse.Panel>
 
@@ -421,7 +509,7 @@ export function SettingsPage() {
             <Space style={{ marginBottom: 12 }}>
               <Button size="small" icon={<PlusOutlined />} onClick={() => openEditProjectStatus()}>添加项目状态</Button>
             </Space>
-            <StatusTable data={projectStatuses} onEdit={openEditProjectStatus} onDelete={handleDeleteProjectStatus} />
+            <StatusTable data={projectStatuses} onEdit={openEditProjectStatus} onDelete={handleDeleteProjectStatus} onReorder={setProjectStatuses} />
           </Card>
         </Collapse.Panel>
 
@@ -430,7 +518,7 @@ export function SettingsPage() {
             <Space style={{ marginBottom: 12 }}>
               <Button size="small" icon={<PlusOutlined />} onClick={() => openEditLeaveType()}>添加请假类型</Button>
             </Space>
-            <StatusTable data={leaveTypes} onEdit={openEditLeaveType} onDelete={handleDeleteLeaveType} />
+            <StatusTable data={leaveTypes} onEdit={openEditLeaveType} onDelete={handleDeleteLeaveType} onReorder={setLeaveTypes} />
           </Card>
         </Collapse.Panel>
 
