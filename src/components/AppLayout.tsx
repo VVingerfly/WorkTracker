@@ -20,7 +20,7 @@ interface AppLayoutProps {
 }
 
 const menuItems = [
-  { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: 'dashboard', icon: <DashboardOutlined />, label: '任务' },
   { key: 'statistics', icon: <BarChartOutlined />, label: '统计' },
   { key: 'admin', icon: <TeamOutlined />, label: '管理' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置' },
@@ -74,7 +74,7 @@ export function AppLayout({ currentPage, onPageChange, children }: AppLayoutProp
     >
       <Layout style={{ minHeight: '100vh', background: '#f5f7fa' }}>
         <Sider
-          width={240}
+          width={120}
           style={{
             background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
             boxShadow: '4px 0 20px rgba(0, 0, 0, 0.15)',
