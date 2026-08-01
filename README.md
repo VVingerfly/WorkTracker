@@ -5,27 +5,40 @@
 ## 功能特性
 
 ### 📊 仪表盘
-- 查看今日任务概览
-- 统计指标卡片（总工时、任务数、已完成、请假）
+- 查看任务概览，统计指标卡片（任务总数、总工时、已完成、进行中）
+- 按时间范围、任务状态筛选
+- 快捷新增任务和请假
+- 任务状态、优先级、工时可直接编辑（状态改为完成时自动标注完成时间）
+- 已完成任务默认隐藏
 
 ### 📁 项目管理
-- 项目分组管理
+- 项目分组管理，点击分组名展开/折叠
 - 项目状态管理（进行中、已交付、暂停、终止）
+- 项目优先级管理与排序
 - 任务列表（支持优先级、状态、工时编辑）
-- 任务排序和筛选
+- 左侧侧边栏可折叠
+- 按项目状态多选过滤
+
+### 🛠️ 管理页面
+- 项目分组、项目的增删改查
+- 项目状态、优先级可直接在表格中编辑
+- 按所属分组、状态等过滤和排序
+- 所属分组按分组颜色显示标签
 
 ### ⚙️ 设置
 - 统计周期配置（月周期、周周期）
-- 优先级管理（自定义标签和颜色）
+- 优先级管理（自定义标签和颜色，拖拽排序）
 - 任务状态管理（自定义标签和颜色）
 - 项目状态管理（自定义标签和颜色）
+- 请假类型管理
+- 数据目录设置（可更改数据保存位置，支持打开目录）
 - 数据备份与恢复
 
 ### 📈 统计报表
-- 月视图/周视图切换
-- 任务列表（按日期分组，可展开查看详情）
-- 项目汇总（按项目分组，可展开查看详情）
-- 工时统计（非8小时标红提醒）
+- 月视图/周视图切换，支持上月/下月、上周/下周导航
+- 任务列表（按日期分组，可展开查看详情，非8小时标红）
+- 项目汇总（按项目分组，展示周期内任务和工时统计）
+- 工时统计
 
 ## 技术栈
 
@@ -83,6 +96,26 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 build.bat
 ```
 
+### 发布到 GitHub Release
+
+项目提供了 `release.ps1` 脚本，可一键完成打包并发布到 GitHub Release：
+
+```powershell
+# 使用 package.json 中的版本号
+powershell -ExecutionPolicy Bypass -File release.ps1
+
+# 指定版本号和发布说明
+powershell -ExecutionPolicy Bypass -File release.ps1 -Version "0.2.0" -Notes "新增统计报表功能"
+```
+
+脚本会自动完成以下步骤：
+1. 安装依赖、构建前端
+2. 打包 Tauri 应用生成 exe 安装包
+3. 创建并推送 Git Tag（如 `v0.1.0`）
+4. 发布到 GitHub Release 并上传安装包
+
+> **前提条件**：如需自动上传，需安装 [GitHub CLI](https://cli.github.com/) 并登录（`gh auth login`）。未安装时会输出手动上传的链接和文件路径。
+
 ### 手动打包步骤
 
 1. **安装依赖**
@@ -102,6 +135,26 @@ npm run build
 ```bash
 npm run tauri build
 ```
+
+### 手动发布 Release
+
+1. 更新 `package.json` 和 `src-tauri/tauri.conf.json` 中的 `version` 版本号
+2. 运行打包脚本生成 exe
+3. 创建并推送 tag：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+4. 打开 https://github.com/VVingerfly/WorkTracker/releases/new
+5. 选择刚创建的 tag，填写标题和说明，拖入安装包文件：
+
+```
+src-tauri/target/release/bundle/nsis/WorkTracker_0.1.0_x64-setup.exe
+```
+
+6. 点击 "Publish release"
 
 ### 打包产物
 
@@ -137,14 +190,14 @@ npx tauri icon src-tauri/app-icon.png
 
 - **应用名称**: WorkTracker
 - **窗口尺寸**: 1200 × 800
-- **数据存储**: `%APPDATA%/WorkTracker/`
+- **数据存储**: `%APPDATA%/com.worktracker.app/`
 - **打包目标**: NSIS（Windows 安装程序）
 
 ## 数据存储
 
 应用数据存储在用户目录下：
 
-- **Windows**: `C:\Users\<用户名>\AppData\Roaming\WorkTracker\`
+- **Windows**: `C:\Users\<用户名>\AppData\Roaming\com.worktracker.app\`
 
 包含文件：
 - `config.json` - 应用配置
@@ -178,6 +231,7 @@ WorkTracker/
 │   └── tauri.conf.json     # Tauri 配置
 ├── build.bat               # Windows 批处理打包脚本
 ├── build.ps1               # Windows PowerShell 打包脚本
+├── release.ps1             # 发布到 GitHub Release 脚本
 ├── package.json            # 前端依赖配置
 ├── vite.config.ts          # Vite 配置
 └── tsconfig.json           # TypeScript 配置

@@ -398,7 +398,7 @@ export function SettingsPage() {
             title: '',
             key: 'sort',
             width: 40,
-            render: (_: unknown, __: StatusOption, index: number) => (
+            render: () => (
               <HolderOutlined
                 style={{ cursor: 'grab', color: '#999', fontSize: 14 }}
                 title="拖动排序"
