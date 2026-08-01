@@ -1,12 +1,61 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, Col, DatePicker, Dropdown, Form, Input, InputNumber, Menu, Modal, Popconfirm, Row, Select, Statistic, Table, Tag, Space, message } from 'antd';
-import { ArrowUpOutlined, CheckCircleOutlined, ClockCircleOutlined, CalendarOutlined, PlusOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons';
+import React, { useEffect, useState } from 'react';
+import { Button, Card, DatePicker, Dropdown, Form, Input, InputNumber, Menu, Modal, Popconfirm, Select, Table, Tag, Space, message } from 'antd';
+import { PlusOutlined, DownOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { Tooltip } from 'antd';
+import type { SorterResult } from 'antd/es/table/interface';
 import dayjs from 'dayjs';
 import { ProjectService } from '../services/ProjectService';
 import { TaskService } from '../services/TaskService';
 import { LeaveService } from '../services/LeaveService';
 import type { Leave, Task } from '../types';
 import { useConfig } from '../contexts/ConfigContext';
+
+interface ResizableTitleProps {
+  onResize?: (width: number) => void;
+  width?: number;
+  [key: string]: unknown;
+}
+
+function ResizableTitle(props: ResizableTitleProps) {
+  const { onResize, width, style, ...restProps } = props;
+  if (!width || !onResize) return <th {...restProps} style={style as React.CSSProperties} />;
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = width;
+    const onMove = (ev: MouseEvent) => {
+      onResize(Math.max(60, startWidth + ev.clientX - startX));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  return (
+    <th {...restProps} style={{ ...(style as React.CSSProperties), position: 'relative' }}>
+      {restProps.children as React.ReactNode}
+      <span
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: 6,
+          cursor: 'col-resize',
+          zIndex: 2,
+          userSelect: 'none',
+        }}
+      />
+    </th>
+  );
+}
 
 export function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -18,9 +67,12 @@ export function DashboardPage() {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('not_done');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [taskForm] = Form.useForm();
   const [leaveForm] = Form.useForm();
+  const [taskSortInfo, setTaskSortInfo] = useState<SorterResult<Task>>({});
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const { priorities, taskStatuses, leaveTypes } = useConfig();
 
   useEffect(() => {
@@ -69,6 +121,7 @@ export function DashboardPage() {
   }
 
   async function handleAddTask() {
+    setEditingTask(null);
     taskForm.resetFields();
     taskForm.setFieldsValue({
       date: dayjs(),
@@ -80,26 +133,52 @@ export function DashboardPage() {
     setTaskModalOpen(true);
   }
 
+  function openEditTask(task: Task) {
+    setEditingTask(task);
+    taskForm.setFieldsValue({
+      title: task.title,
+      projectId: task.projectId,
+      description: task.description,
+      priority: task.priority,
+      status: task.status,
+      workHours: task.workHours,
+      startTime: task.startTime ? dayjs(task.startTime) : null,
+      finishTime: task.finishTime ? dayjs(task.finishTime) : null,
+      remark: task.remark,
+    });
+    setTaskModalOpen(true);
+  }
+
   async function handleSaveTask() {
     const values = await taskForm.validateFields();
-    const task: Omit<Task, 'id'> = {
-      projectId: values.projectId,
-      title: values.title,
-      description: values.description || '',
-      priority: values.priority,
-      status: values.status,
-      startTime: values.date.format('YYYY-MM-DD'),
-      finishTime: null,
-      workHours: values.workHours,
-      remark: values.remark || '',
-    };
-    await TaskService.addTask(task.projectId, task.title);
-    await TaskService.updateTask((await TaskService.getTasks()).find((t) => t.title === task.title && t.projectId === task.projectId)!.id, {
-      ...task,
-      id: undefined!,
-    });
-    message.success('任务已添加');
+    if (editingTask) {
+      await TaskService.updateTask(editingTask.id, {
+        title: values.title,
+        projectId: values.projectId,
+        description: values.description || '',
+        priority: values.priority,
+        status: values.status,
+        workHours: typeof values.workHours === 'number' ? values.workHours : 0,
+        startTime: values.startTime ? values.startTime.toISOString() : null,
+        finishTime: values.finishTime ? values.finishTime.toISOString() : null,
+        remark: values.remark || '',
+      });
+      message.success('任务已保存');
+    } else {
+      const added = await TaskService.addTask(values.projectId, values.title);
+      await TaskService.updateTask(added.id, {
+        description: values.description || '',
+        priority: values.priority,
+        status: values.status,
+        startTime: values.date ? values.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+        finishTime: null,
+        workHours: typeof values.workHours === 'number' ? values.workHours : 0,
+        remark: values.remark || '',
+      });
+      message.success('任务已添加');
+    }
     setTaskModalOpen(false);
+    setEditingTask(null);
     loadData();
   }
 
@@ -141,18 +220,51 @@ export function DashboardPage() {
     return leaveTypes.find((t) => t.id === typeId)?.color || '#d9d9d9';
   };
 
+  const priorityOrder: Record<string, number> = priorities.reduce((acc, p, index) => {
+    acc[p.id] = index;
+    return acc;
+  }, {} as Record<string, number>);
+
   const taskColumns = [
-    { title: '任务', dataIndex: 'title', key: 'title' },
     {
       title: '项目',
       key: 'project',
+      width: 140,
+      ellipsis: true,
+      sorter: true,
       render: (_: unknown, record: Task) => projectNames.get(record.projectId) ?? '-',
+    },
+    {
+      title: '任务',
+      dataIndex: 'title',
+      key: 'title',
+      ellipsis: true,
+      render: (title: string, record: Task) => (
+        <Tooltip
+          title={
+            <div style={{ whiteSpace: 'pre-wrap' }}>
+              <div><strong>标题：</strong>{title}</div>
+              <div><strong>项目：</strong>{projectNames.get(record.projectId) ?? '-'}</div>
+              <div><strong>描述：</strong>{record.description || '无'}</div>
+              <div><strong>优先级：</strong>{priorities.find((p) => p.id === record.priority)?.label || record.priority}</div>
+              <div><strong>状态：</strong>{taskStatuses.find((s) => s.id === record.status)?.label || record.status}</div>
+              <div><strong>工时：</strong>{record.workHours}h</div>
+              <div><strong>开始时间：</strong>{record.startTime ? dayjs(record.startTime).format('YYYY-MM-DD HH:mm') : '无'}</div>
+              <div><strong>完成时间：</strong>{record.finishTime ? dayjs(record.finishTime).format('YYYY-MM-DD HH:mm') : '无'}</div>
+              <div><strong>备注：</strong>{record.remark || '无'}</div>
+            </div>
+          }
+        >
+          <span style={{ cursor: 'pointer' }}>{title}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 90,
+      width: 96,
+      sorter: true,
       render: (p: string, record: Task) => {
         const priority = priorities.find((pr) => pr.id === p);
         const menu = (
@@ -189,7 +301,8 @@ export function DashboardPage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 100,
+      sorter: true,
       render: (s: string, record: Task) => {
         const status = taskStatuses.find((st) => st.id === s);
         const menu = (
@@ -230,7 +343,8 @@ export function DashboardPage() {
       title: '工时',
       dataIndex: 'workHours',
       key: 'workHours',
-      width: 70,
+      width: 84,
+      sorter: true,
       render: (h: number, record: Task) => (
         <InputNumber
           min={0}
@@ -252,17 +366,79 @@ export function DashboardPage() {
       title: '开始时间',
       dataIndex: 'startTime',
       key: 'startTime',
-      width: 130,
+      width: 110,
+      sorter: true,
       render: (t: string | null) => t ? dayjs(t).format('YYYY-MM-DD') : '-',
     },
     {
       title: '完成时间',
       dataIndex: 'finishTime',
       key: 'finishTime',
-      width: 130,
+      width: 110,
+      sorter: true,
       render: (t: string | null) => t ? dayjs(t).format('YYYY-MM-DD') : '-',
     },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 88,
+      render: (_: unknown, record: Task) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditTask(record)} />
+          <Popconfirm title="确定删除该任务？" onConfirm={async () => {
+            await TaskService.deleteTask(record.id);
+            loadData();
+            message.success('任务已删除');
+          }}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ];
+
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    const { columnKey, order } = taskSortInfo;
+    if (!columnKey || !order) return 0;
+    const direction = order === 'ascend' ? 1 : -1;
+    if (columnKey === 'project') {
+      const nameA = projectNames.get(a.projectId) ?? '';
+      const nameB = projectNames.get(b.projectId) ?? '';
+      return nameA.localeCompare(nameB, 'zh-CN') * direction;
+    }
+    if (columnKey === 'priority') {
+      return ((priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)) * direction;
+    }
+    if (columnKey === 'status') {
+      const labelA = taskStatuses.find((s) => s.id === a.status)?.label || a.status;
+      const labelB = taskStatuses.find((s) => s.id === b.status)?.label || b.status;
+      return labelA.localeCompare(labelB, 'zh-CN') * direction;
+    }
+    const va = a[columnKey as keyof Task];
+    const vb = b[columnKey as keyof Task];
+    if (va === vb) return 0;
+    if (va === null || va === undefined) return direction;
+    if (vb === null || vb === undefined) return -direction;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direction;
+    return String(va).localeCompare(String(vb)) * direction;
+  });
+
+  const RESIZABLE_KEYS = ['project'];
+  const resizableTaskColumns = taskColumns.map((col) => {
+    const key = col.key as string;
+    if (!RESIZABLE_KEYS.includes(key)) {
+      return col;
+    }
+    const w = columnWidths[key] ?? col.width ?? 100;
+    return {
+      ...col,
+      width: w,
+      onHeaderCell: () => ({
+        width: w,
+        onResize: (newWidth: number) => setColumnWidths((prev) => ({ ...prev, [key]: newWidth })),
+      }),
+    };
+  });
 
   const leaveColumns = [
     {
@@ -314,77 +490,27 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card
-            hoverable
-            style={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              color: '#fff',
-              border: 'none',
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>任务总数</span>}
-              value={filteredTasks.length}
-              prefix={<CalendarOutlined />}
-              valueStyle={{ color: '#fff', fontSize: 32, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card
-            hoverable
-            style={{
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: '#fff',
-              border: 'none',
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>总工时</span>}
-              value={totalHours}
-              suffix="h"
-              prefix={<ArrowUpOutlined />}
-              valueStyle={{ color: '#fff', fontSize: 32, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card
-            hoverable
-            style={{
-              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              color: '#fff',
-              border: 'none',
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>已完成</span>}
-              value={filteredTasks.filter((t) => t.status === 'done').length}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#fff', fontSize: 32, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card
-            hoverable
-            style={{
-              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-              color: '#fff',
-              border: 'none',
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)' }}>进行中</span>}
-              value={filteredTasks.filter((t) => t.status === 'in_progress').length}
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#fff', fontSize: 32, fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <Card
+        title="任务概览合计"
+        style={{ marginBottom: 20 }}
+        size="small"
+        styles={{ body: { padding: 16, paddingTop: 12, paddingBottom: 12 } }}
+      >
+        <Space size="large" wrap>
+          <span style={{ color: '#64748b' }}>
+            任务总数：<strong style={{ color: '#1e293b', fontSize: 18 }}>{filteredTasks.length}</strong> 个
+          </span>
+          <span style={{ color: '#64748b' }}>
+            总工时：<strong style={{ color: '#2563eb', fontSize: 18 }}>{totalHours}h</strong>
+          </span>
+          <span style={{ color: '#64748b' }}>
+            已完成：<strong style={{ color: '#059669', fontSize: 18 }}>{filteredTasks.filter((t) => t.status === 'done').length}</strong> 个
+          </span>
+          <span style={{ color: '#64748b' }}>
+            进行中：<strong style={{ color: '#d97706', fontSize: 18 }}>{filteredTasks.filter((t) => t.status === 'in_progress').length}</strong> 个
+          </span>
+        </Space>
+      </Card>
 
       <Card style={{ marginBottom: 16 }}>
         <Space>
@@ -424,11 +550,14 @@ export function DashboardPage() {
 
       <Card title="任务列表" style={{ background: '#fff', marginBottom: 16 }}>
         <Table
-          dataSource={filteredTasks}
-          columns={taskColumns}
+          dataSource={sortedTasks}
+          columns={resizableTaskColumns}
           rowKey="id"
           size="small"
           pagination={{ pageSize: 15 }}
+          onChange={(_, __, sorter) => setTaskSortInfo(sorter as SorterResult<Task>)}
+          components={{ header: { cell: ResizableTitle } }}
+          tableLayout="fixed"
           style={{ background: '#fff' }}
         />
       </Card>
@@ -444,26 +573,43 @@ export function DashboardPage() {
         />
       </Card>
 
-      <Modal title="新增任务" open={taskModalOpen} onOk={handleSaveTask} onCancel={() => setTaskModalOpen(false)} width={520}>
+      <Modal title={editingTask ? '编辑任务' : '新增任务'} open={taskModalOpen} onOk={handleSaveTask} onCancel={() => { setTaskModalOpen(false); setEditingTask(null); }} width={560}>
         <Form form={taskForm} layout="vertical">
-          <Form.Item name="title" label="任务标题" rules={[{ required: true, message: '请输入任务标题' }]}>
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入任务标题' }]}>
             <Input />
           </Form.Item>
           <Form.Item name="projectId" label="所属项目" rules={[{ required: true, message: '请选择项目' }]}>
-            <Select style={{ width: '100%' }} options={projects.map((p) => ({ value: p.id, label: p.name }))} />
+            <Select
+              style={{ width: '100%' }}
+              showSearch
+              optionFilterProp="label"
+              options={[...projects].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')).map((p) => ({ value: p.id, label: p.name }))}
+            />
           </Form.Item>
-          <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
-            <DatePicker style={{ width: '100%' }} />
+          <Form.Item name="description" label="描述">
+            <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="priority" label="优先级" rules={[{ required: true, message: '请选择优先级' }]}>
-            <Select style={{ width: '100%' }} options={priorities.map((p) => ({ value: p.id, label: p.label }))} />
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true, message: '请选择状态' }]}>
-            <Select style={{ width: '100%' }} options={taskStatuses.map((s) => ({ value: s.id, label: s.label }))} />
-          </Form.Item>
-          <Form.Item name="workHours" label="工时">
-            <InputNumber min={0} max={24} step={0.5} style={{ width: '100%' }} />
-          </Form.Item>
+          <Space>
+            <Form.Item name="priority" label="优先级" rules={[{ required: true, message: '请选择优先级' }]}>
+              <Select style={{ width: 100 }} options={priorities.map((p) => ({ value: p.id, label: p.label }))} />
+            </Form.Item>
+            <Form.Item name="status" label="状态" rules={[{ required: true, message: '请选择状态' }]}>
+              <Select style={{ width: 110 }} options={taskStatuses.map((s) => ({ value: s.id, label: s.label }))} />
+            </Form.Item>
+            <Form.Item name="workHours" label="工时">
+              <InputNumber min={0} max={24} step={0.5} />
+            </Form.Item>
+          </Space>
+          {editingTask ? (
+            <Space>
+              <Form.Item name="startTime" label="开始时间"><DatePicker showTime /></Form.Item>
+              <Form.Item name="finishTime" label="完成时间"><DatePicker showTime /></Form.Item>
+            </Space>
+          ) : (
+            <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+          )}
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={2} />
           </Form.Item>

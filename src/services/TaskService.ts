@@ -10,12 +10,30 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+function migrateTask(raw: Partial<Task> & { id: string; projectId: string; title: string }): Task {
+  return {
+    id: raw.id,
+    projectId: raw.projectId,
+    title: raw.title,
+    description: raw.description ?? '',
+    priority: raw.priority ?? '',
+    status: raw.status ?? '',
+    startTime: raw.startTime ?? null,
+    finishTime: raw.finishTime ?? null,
+    workHours: typeof raw.workHours === 'number' ? raw.workHours : 0,
+    remark: raw.remark ?? '',
+  };
+}
+
 export class TaskService {
   private static tasks: TasksData | null = null;
 
   static async load(): Promise<TasksData> {
     if (!TaskService.tasks) {
-      TaskService.tasks = await FileService.readJson('tasks.json', DEFAULT_TASKS);
+      const raw = await FileService.readJson<TasksData>('tasks.json', DEFAULT_TASKS);
+      TaskService.tasks = {
+        tasks: (raw.tasks ?? []).map(migrateTask),
+      };
     }
     return TaskService.tasks;
   }

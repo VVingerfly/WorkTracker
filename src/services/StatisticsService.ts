@@ -4,15 +4,25 @@ import { ConfigService } from './ConfigService';
 import { ProjectService } from './ProjectService';
 import { TaskService } from './TaskService';
 
+export type StatRowType = 'task' | 'leave';
+
 export interface StatRow {
   key: string;
+  rowType: StatRowType;
   date: string;
   projectName: string;
+  projectId?: string;
+  contactPerson: string;
   taskTitle: string;
+  description: string;
   priority: string;
   workHours: number;
   status: string;
+  finishTime: string | null;
+  startTime: string | null;
   remark: string;
+  leaveId?: string;
+  leaveType?: string;
 }
 
 export interface MonthSummary {
@@ -58,23 +68,57 @@ export class StatisticsService {
       ? await StatisticsService.getMonthRange(ref)
       : await StatisticsService.getWeekRange(ref);
 
-    const tasks = await TaskService.getTasks();
-    const projects = await ProjectService.getProjects();
+    const [tasks, leaves, projects] = await Promise.all([
+      TaskService.getTasks(),
+      TaskService.getLeaves(),
+      ProjectService.getProjects(),
+    ]);
     const projectMap = new Map(projects.map((p) => [p.id, p.name]));
+    const projectContactMap = new Map(projects.map((p) => [p.id, p.contactPerson || '']));
 
-    return tasks
+    const taskRows: StatRow[] = tasks
       .filter((t) => StatisticsService.isTaskInRange(t, start, end))
       .map((t) => ({
-        key: t.id,
-        date: t.finishTime?.slice(0, 10) ?? t.startTime?.slice(0, 10) ?? '',
+        key: `task:${t.id}`,
+        rowType: 'task' as const,
+        date: t.finishTime ? dayjs(t.finishTime).format('YYYY-MM-DD') : t.startTime ? dayjs(t.startTime).format('YYYY-MM-DD') : '',
         projectName: projectMap.get(t.projectId) ?? '未知项目',
+        projectId: t.projectId,
+        contactPerson: projectContactMap.get(t.projectId) || '',
         taskTitle: t.title,
+        description: t.description,
         priority: t.priority,
         workHours: t.workHours,
         status: t.status,
+        finishTime: t.finishTime,
+        startTime: t.startTime,
         remark: t.remark,
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+      }));
+
+    const leaveRows: StatRow[] = leaves
+      .filter((l) => {
+        const d = dayjs(l.date);
+        return d.isAfter(start.subtract(1, 'day')) && d.isBefore(end.add(1, 'day'));
+      })
+      .map((l) => ({
+        key: `leave:${l.id}`,
+        rowType: 'leave' as const,
+        date: l.date.slice(0, 10),
+        projectName: '请假',
+        contactPerson: '',
+        taskTitle: '请假',
+        description: '',
+        priority: '',
+        workHours: l.hours,
+        status: '',
+        finishTime: l.date,
+        startTime: l.date,
+        remark: l.remark,
+        leaveId: l.id,
+        leaveType: l.type,
+      }));
+
+    return [...taskRows, ...leaveRows].sort((a, b) => a.date.localeCompare(b.date));
   }
 
   static async getMonthSummary(month?: dayjs.Dayjs, viewType: 'month' | 'week' = 'month'): Promise<MonthSummary> {
@@ -113,7 +157,7 @@ export class StatisticsService {
   private static isTaskInRange(task: Task, start: dayjs.Dayjs, end: dayjs.Dayjs): boolean {
     const dateStr = task.finishTime ?? task.startTime;
     if (!dateStr) return false;
-    const d = dayjs(dateStr.slice(0, 10));
+    const d = dayjs(dateStr);
     const startTime = start.startOf('day').valueOf();
     const endTime = end.endOf('day').valueOf();
     const taskTime = d.startOf('day').valueOf();
