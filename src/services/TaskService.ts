@@ -10,9 +10,9 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
-function migrateTask(raw: Partial<Task> & { id: string; projectId: string; title: string }): Task {
+function migrateTask(raw: Partial<Task> & { id?: string; projectId: string; title: string }): Task {
   return {
-    id: raw.id,
+    id: raw.id || generateId(),
     projectId: raw.projectId,
     title: raw.title,
     description: raw.description ?? '',
@@ -31,9 +31,13 @@ export class TaskService {
   static async load(): Promise<TasksData> {
     if (!TaskService.tasks) {
       const raw = await FileService.readJson<TasksData>('tasks.json', DEFAULT_TASKS);
-      TaskService.tasks = {
-        tasks: (raw.tasks ?? []).map(migrateTask),
-      };
+      const tasks = (raw.tasks ?? []).map(migrateTask);
+      TaskService.tasks = { tasks };
+      // 如果有任务缺少 ID（旧数据），修复后立即保存
+      const needFix = (raw.tasks ?? []).some((t) => !t.id);
+      if (needFix) {
+        await TaskService.save();
+      }
     }
     return TaskService.tasks;
   }
@@ -96,6 +100,8 @@ export class TaskService {
     if (index >= 0) {
       data.tasks[index] = { ...data.tasks[index], ...updates };
       await TaskService.save();
+    } else {
+      throw new Error(`Task not found: ${id}`);
     }
   }
 

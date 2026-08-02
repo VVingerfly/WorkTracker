@@ -68,6 +68,7 @@ export function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState<string>('not_done');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [taskForm] = Form.useForm();
   const [leaveForm] = Form.useForm();
@@ -183,6 +184,7 @@ export function DashboardPage() {
   }
 
   async function handleAddLeave() {
+    setEditingLeaveId(null);
     leaveForm.resetFields();
     leaveForm.setFieldsValue({
       date: dayjs(),
@@ -192,17 +194,34 @@ export function DashboardPage() {
     setLeaveModalOpen(true);
   }
 
+  function openEditLeave(leave: Leave) {
+    setEditingLeaveId(leave.id);
+    leaveForm.setFieldsValue({
+      date: dayjs(leave.date),
+      type: leave.type,
+      hours: leave.hours,
+      remark: leave.remark,
+    });
+    setLeaveModalOpen(true);
+  }
+
   async function handleSaveLeave() {
     const values = await leaveForm.validateFields();
-    const leave: Omit<Leave, 'id'> = {
+    const data = {
       date: values.date.format('YYYY-MM-DD'),
       type: values.type,
       hours: values.hours,
       remark: values.remark || '',
     };
-    await LeaveService.addLeave(leave);
-    message.success('请假已添加');
+    if (editingLeaveId) {
+      await LeaveService.updateLeave(editingLeaveId, data);
+      message.success('请假已保存');
+    } else {
+      await LeaveService.addLeave(data);
+      message.success('请假已添加');
+    }
     setLeaveModalOpen(false);
+    setEditingLeaveId(null);
     loadData();
   }
 
@@ -474,9 +493,12 @@ export function DashboardPage() {
       key: 'action',
       width: 80,
       render: (_: unknown, record: Leave) => (
-        <Popconfirm title="确定删除？" onConfirm={() => handleDeleteLeave(record.id)} okText="确定" cancelText="取消">
-          <Button type="text" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-        </Popconfirm>
+        <Space size={0}>
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEditLeave(record)} />
+          <Popconfirm title="确定删除？" onConfirm={() => handleDeleteLeave(record.id)} okText="确定" cancelText="取消">
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -616,7 +638,7 @@ export function DashboardPage() {
         </Form>
       </Modal>
 
-      <Modal title="新增请假" open={leaveModalOpen} onOk={handleSaveLeave} onCancel={() => setLeaveModalOpen(false)} width={480}>
+      <Modal title={editingLeaveId ? '编辑请假' : '新增请假'} open={leaveModalOpen} onOk={handleSaveLeave} onCancel={() => { setLeaveModalOpen(false); setEditingLeaveId(null); }} width={480}>
         <Form form={leaveForm} layout="vertical">
           <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
             <DatePicker style={{ width: '100%' }} />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Collapse, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Radio, Tabs, Tooltip, message } from 'antd';
-import { DownloadOutlined, LeftOutlined, RightOutlined, CalendarOutlined, CoffeeOutlined, EditOutlined, ExpandAltOutlined, CompressOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Card, Collapse, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Radio, Tabs, Tooltip, Popconfirm, message } from 'antd';
+import { DownloadOutlined, LeftOutlined, RightOutlined, CalendarOutlined, CoffeeOutlined, EditOutlined, ExpandAltOutlined, CompressOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatisticsService, type StatRow } from '../services/StatisticsService';
 import { ExportService } from '../services/ExportService';
@@ -24,6 +24,7 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
   const [expandedDateKeys, setExpandedDateKeys] = useState<string[]>([]);
   const [expandedProjectKeys, setExpandedProjectKeys] = useState<string[]>([]);
   const { priorities, taskStatuses, leaveTypes } = useConfig();
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     loadData(selectedDate, viewType);
@@ -35,13 +36,13 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
     await ProjectService.resetCache();
     await TaskService.resetCache();
     await LeaveService.resetCache();
-    const [range, statRows, periodSummary] = await Promise.all([
-      type === 'month' ? StatisticsService.getMonthRange(date) : StatisticsService.getWeekRange(date),
-      StatisticsService.getStatRows(date, type),
-      StatisticsService.getMonthSummary(date, type),
-    ]);
+    const range = type === 'month' ? await StatisticsService.getMonthRange(date) : await StatisticsService.getWeekRange(date);
+    const statRows = await StatisticsService.getStatRows(date, type);
+    const periodSummary = await StatisticsService.getMonthSummary(date, type);
+    const allProjects = await ProjectService.getProjects();
     setRows(statRows);
     setSummary(periodSummary);
+    setProjects(allProjects.map(p => ({ id: p.id, name: p.name })));
     setRangeText(`${range[0].format('YYYY-MM-DD')} ~ ${range[1].format('YYYY-MM-DD')}`);
   }
 
@@ -62,8 +63,38 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
   }
 
   async function handleUpdateTask(id: string, updates: Partial<{ workHours: number; finishTime: string | null }>) {
-    await TaskService.updateTask(id, updates);
-    await loadData(selectedDate, viewType);
+    try {
+      await TaskService.updateTask(id, updates);
+      // 乐观更新：直接修改本地 rows 状态，确保 UI 立即响应
+      setRows(prev => {
+        const next = prev.map(r => {
+          if (r.key === `task:${id}`) {
+            const updated = { ...r, ...updates } as StatRow;
+            if (updates.finishTime !== undefined) {
+              updated.date = updates.finishTime || r.startTime || r.date;
+            }
+            return updated;
+          }
+          return r;
+        });
+        // 同步更新 summary
+        const taskRows = next.filter(r => r.rowType === 'task');
+        const leaveRows = next.filter(r => r.rowType === 'leave');
+        setSummary({
+          totalHours: taskRows.reduce((s, r) => s + r.workHours, 0),
+          taskCount: taskRows.length,
+          doneCount: taskRows.filter(r => r.status === 'done').length,
+          leaveHours: leaveRows.reduce((s, r) => s + r.workHours, 0),
+        });
+        return next;
+      });
+      // 后台全量刷新（处理日期变化导致的分组变动等复杂场景）
+      loadData(selectedDate, viewType);
+    } catch (e) {
+      message.error('更新任务失败: ' + (e instanceof Error ? e.message : String(e)));
+      console.error(e);
+      loadData(selectedDate, viewType);
+    }
   }
 
   function openEditTask(row: StatRow) {
@@ -71,6 +102,7 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
     setEditingTaskId(taskId);
     taskForm.setFieldsValue({
       title: row.taskTitle,
+      projectId: row.projectId,
       description: row.description,
       priority: row.priority,
       status: row.status,
@@ -85,21 +117,27 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
   async function handleSaveTask() {
     if (!editingTaskId) return;
     const values = await taskForm.validateFields();
-    await TaskService.updateTask(editingTaskId, {
-      title: values.title,
-      description: values.description ?? '',
-      priority: values.priority,
-      status: values.status,
-      workHours: typeof values.workHours === 'number' ? values.workHours : 0,
-      startTime: values.startTime ? values.startTime.toISOString() : null,
-      finishTime: values.finishTime ? values.finishTime.toISOString() : null,
-      remark: values.remark ?? '',
-    });
-    setTaskModalOpen(false);
-    taskForm.resetFields();
-    setEditingTaskId(null);
-    await loadData(selectedDate, viewType);
-    message.success('任务已保存');
+    try {
+      await TaskService.updateTask(editingTaskId, {
+        title: values.title,
+        projectId: values.projectId,
+        description: values.description ?? '',
+        priority: values.priority,
+        status: values.status,
+        workHours: typeof values.workHours === 'number' ? values.workHours : 0,
+        startTime: values.startTime ? values.startTime.format('YYYY-MM-DD') : null,
+        finishTime: values.finishTime ? values.finishTime.format('YYYY-MM-DD') : null,
+        remark: values.remark ?? '',
+      });
+      setTaskModalOpen(false);
+      taskForm.resetFields();
+      setEditingTaskId(null);
+      await loadData(selectedDate, viewType);
+      message.success('任务已保存');
+    } catch (e) {
+      message.error('保存任务失败');
+      console.error(e);
+    }
   }
 
   async function handleUpdateLeave(id: string, updates: Partial<{ hours: number; date: string }>) {
@@ -107,36 +145,60 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
     if (typeof updates.hours === 'number') payload.hours = updates.hours;
     if (updates.date) payload.date = updates.date;
     if (Object.keys(payload).length === 0) return;
-    await LeaveService.updateLeave(id, payload);
-    await loadData(selectedDate, viewType);
-  }
-
-  function openEditLeave(row: StatRow) {
-    if (!row.leaveId) return;
-    setEditingLeaveId(row.leaveId);
-    leaveForm.setFieldsValue({
-      type: row.leaveType,
-      hours: row.workHours,
-      date: row.date ? dayjs(row.date) : null,
-      remark: row.remark,
-    });
-    setLeaveModalOpen(true);
+    try {
+      await LeaveService.updateLeave(id, payload);
+      // 乐观更新
+      setRows(prev => {
+        const next = prev.map(r => {
+          if (r.leaveId === id) {
+            const updated = { ...r } as StatRow;
+            if (payload.hours !== undefined) updated.workHours = payload.hours;
+            if (payload.date) {
+              updated.date = payload.date;
+              updated.finishTime = payload.date;
+              updated.startTime = payload.date;
+            }
+            return updated;
+          }
+          return r;
+        });
+        const taskRows = next.filter(r => r.rowType === 'task');
+        const leaveRows = next.filter(r => r.rowType === 'leave');
+        setSummary({
+          totalHours: taskRows.reduce((s, r) => s + r.workHours, 0),
+          taskCount: taskRows.length,
+          doneCount: taskRows.filter(r => r.status === 'done').length,
+          leaveHours: leaveRows.reduce((s, r) => s + r.workHours, 0),
+        });
+        return next;
+      });
+      loadData(selectedDate, viewType);
+    } catch (e) {
+      message.error('更新请假失败: ' + (e instanceof Error ? e.message : String(e)));
+      console.error(e);
+      loadData(selectedDate, viewType);
+    }
   }
 
   async function handleSaveLeave() {
     if (!editingLeaveId) return;
     const values = await leaveForm.validateFields();
-    await LeaveService.updateLeave(editingLeaveId, {
-      type: values.type,
-      hours: typeof values.hours === 'number' ? values.hours : 0,
-      date: values.date ? values.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
-      remark: values.remark ?? '',
-    });
-    setLeaveModalOpen(false);
-    leaveForm.resetFields();
-    setEditingLeaveId(null);
-    await loadData(selectedDate, viewType);
-    message.success('请假已保存');
+    try {
+      await LeaveService.updateLeave(editingLeaveId, {
+        type: values.type,
+        hours: typeof values.hours === 'number' ? values.hours : 0,
+        date: values.date ? values.date.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+        remark: values.remark ?? '',
+      });
+      setLeaveModalOpen(false);
+      leaveForm.resetFields();
+      setEditingLeaveId(null);
+      await loadData(selectedDate, viewType);
+      message.success('请假已保存');
+    } catch (e) {
+      message.error('保存请假失败');
+      console.error(e);
+    }
   }
 
   const totalHoursAll = rows.reduce((sum, r) => sum + r.workHours, 0);
@@ -242,23 +304,34 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
       dataIndex: 'workHours',
       key: 'workHours',
       width: 90,
-      render: (h: number, record: StatRow) => (
-        <InputNumber
-          value={h}
-          onChange={async (value) => {
+      render: (h: number, record: StatRow) => {
+        let latestValue = h;
+        const save = () => {
+          if (latestValue !== h) {
             if (record.rowType === 'leave' && record.leaveId) {
-              await handleUpdateLeave(record.leaveId, { hours: value || 0 });
+              handleUpdateLeave(record.leaveId, { hours: latestValue });
             } else {
               const taskId = record.key.replace('task:', '');
-              await handleUpdateTask(taskId, { workHours: value || 0 });
+              handleUpdateTask(taskId, { workHours: latestValue });
             }
-          }}
-          min={0}
-          step={0.5}
-          size="small"
-          style={{ width: '100%' }}
-        />
-      ),
+          }
+        };
+        return (
+          <InputNumber
+            key={`${record.key}-${h}`}
+            defaultValue={h}
+            onChange={(value) => {
+              latestValue = typeof value === 'number' ? value : 0;
+            }}
+            onBlur={save}
+            onPressEnter={save}
+            min={0}
+            step={0.5}
+            size="small"
+            style={{ width: '100%' }}
+          />
+        );
+      },
     },
     {
       title: '完成时间',
@@ -270,9 +343,9 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
           return (
             <DatePicker
               value={ft ? dayjs(ft) : null}
-              onChange={async (value) => {
+              onChange={(value) => {
                 if (record.leaveId) {
-                  await handleUpdateLeave(record.leaveId, { date: value ? value.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD') });
+                  handleUpdateLeave(record.leaveId, { date: value ? value.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD') });
                 }
               }}
               allowClear={false}
@@ -285,8 +358,8 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
         return (
           <DatePicker
             value={ft ? dayjs(ft) : null}
-            onChange={async (value) => {
-              await handleUpdateTask(taskId, { finishTime: value ? value.toISOString() : null });
+            onChange={(value) => {
+              handleUpdateTask(taskId, { finishTime: value ? value.format('YYYY-MM-DD') : null });
             }}
             allowClear
             size="small"
@@ -298,15 +371,37 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
     {
       title: '操作',
       key: 'actions',
-      width: 56,
+      width: 80,
       align: 'center' as const,
       render: (_: unknown, record: StatRow) => (
-        <Button
-          type="text"
-          size="small"
-          icon={<EditOutlined />}
-          onClick={() => (record.rowType === 'leave' ? openEditLeave(record) : openEditTask(record))}
-        />
+        <Space size={0}>
+          {record.rowType !== 'leave' && (
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditTask(record)}
+            />
+          )}
+          <Popconfirm
+            title={record.rowType === 'leave' ? '确定删除此请假？' : '确定删除此任务？'}
+            onConfirm={async () => {
+              if (record.rowType === 'leave' && record.leaveId) {
+                await LeaveService.deleteLeave(record.leaveId);
+              } else {
+                const taskId = record.key.replace('task:', '');
+                await TaskService.deleteTask(taskId);
+              }
+              await loadData(selectedDate, viewType);
+              message.success(record.rowType === 'leave' ? '请假已删除' : '任务已删除');
+            }}
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -582,9 +677,26 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
         </Tabs.TabPane>
       </Tabs>
 
-      <Modal title="编辑任务" open={taskModalOpen} onOk={handleSaveTask} onCancel={() => setTaskModalOpen(false)} width={560}>
+      <Modal
+        title="编辑任务"
+        open={taskModalOpen}
+        onCancel={() => setTaskModalOpen(false)}
+        width={560}
+        footer={[
+          <Button key="cancel" onClick={() => setTaskModalOpen(false)}>取消</Button>,
+          <Button key="ok" type="primary" onClick={handleSaveTask}>保存</Button>,
+        ]}
+      >
         <Form form={taskForm} layout="vertical">
           <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="projectId" label="所属项目" rules={[{ required: true }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              placeholder="选择项目"
+            />
+          </Form.Item>
           <Form.Item name="description" label="描述"><Input.TextArea /></Form.Item>
           <Space>
             <Form.Item name="priority" label="优先级">
@@ -596,8 +708,8 @@ export function StatisticsPage({ hideTitle = false }: { hideTitle?: boolean }) {
             <Form.Item name="workHours" label="工时"><InputNumber min={0} step={0.5} /></Form.Item>
           </Space>
           <Space>
-            <Form.Item name="startTime" label="开始时间"><DatePicker showTime /></Form.Item>
-            <Form.Item name="finishTime" label="完成时间"><DatePicker showTime /></Form.Item>
+            <Form.Item name="startTime" label="开始时间"><DatePicker /></Form.Item>
+            <Form.Item name="finishTime" label="完成时间"><DatePicker /></Form.Item>
           </Space>
           <Form.Item name="remark" label="备注"><Input.TextArea /></Form.Item>
         </Form>
